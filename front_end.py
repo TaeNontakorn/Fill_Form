@@ -191,7 +191,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # API Endpoint ของ FastAPI Back-end
-API_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000/generate-contract")
+API_URL = "https://fill-form-8163.onrender.com"
 
 # =================================================================
 # ส่วนแสดงผล UI หน้าแรก
