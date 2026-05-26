@@ -188,10 +188,10 @@ st.markdown("""
         font-weight: 400;
     }
 </style>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True)    
 
 # API Endpoint ของ FastAPI Back-end
-API_URL = "https://fill-form-8163.onrender.com"
+API_URL = "https://fill-form-8163.onrender.com/generate-contract"
 
 # =================================================================
 # ส่วนแสดงผล UI หน้าแรก
