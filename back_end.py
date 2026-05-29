@@ -222,7 +222,10 @@ def wrap_values(data):
         # ไม่ขีดเส้นใต้คำว่า "ไม่พบข้อมูล" หรือค่าว่าง
         if data == "ไม่พบข้อมูล" or not data.strip():
             return data
-        return f"{_MARKER}{data}{_MARKER}"
+        
+        # ลบอักขระส่วนเกินที่ขอบ (เช่น เครื่องหมายจุลภาค, คำพูด) ออกไปให้ข้อความ "โล้นๆ" ตามที่ต้องการ
+        cleaned_data = data.strip(' \t\n\r\'",')
+        return f"{_MARKER}{cleaned_data}{_MARKER}"
     else:
         return data
 
@@ -232,10 +235,8 @@ def wrap_values(data):
 _WNS  = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 _XSNS = 'http://www.w3.org/XML/1998/namespace'
 
-def _split_run_by_stars(run):
-    full_text = run.text
+def _split_run_elem_by_stars(r_elem, full_text):
     parts = full_text.split(_MARKER)
-    r_elem = run._r
     p_elem = r_elem.getparent()
     idx = list(p_elem).index(r_elem)
     p_elem.remove(r_elem)
@@ -249,7 +250,7 @@ def _split_run_by_stars(run):
             new_r.remove(t)
         t_elem = OxmlElement('w:t')
         t_elem.text = text
-        if text != text.strip():
+        if text != text.strip() or text.startswith(' ') or text.endswith(' '):
             t_elem.set(f'{{{_XSNS}}}space', 'preserve')
         new_r.append(t_elem)
         rPr = new_r.find(f'{{{_WNS}}}rPr')
@@ -275,36 +276,25 @@ def _split_run_by_stars(run):
         p_elem.insert(insert_idx, new_r)
         insert_idx += 1
 
-
-def _process_paragraphs(paragraphs):
-    for p in paragraphs:
-        runs_to_fix = [r for r in p.runs if _MARKER in r.text]
-        for r in runs_to_fix:
-            _split_run_by_stars(r)
-
-
-# Helper: ค้นหาข้อความที่มี ★ ในไฟล์ Word ตั้งค่าขีดเส้นใต้+สีแดง และลบ ★ ออก
-# =================================================================
 def process_runs_to_underline(doc):
-    # 1. ย่อหน้าปกติ
-    _process_paragraphs(doc.paragraphs)
-    # 2. ตาราง
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                _process_paragraphs(cell.paragraphs)
-                for nested_table in cell.tables:
-                    for nested_row in nested_table.rows:
-                        for nested_cell in nested_row.cells:
-                            _process_paragraphs(nested_cell.paragraphs)
-    # 3. Header และ Footer
-    for section in doc.sections:
+    parts_to_search = [doc.docx.element.body]
+    
+    for section in doc.docx.sections:
         for part in [
             section.header, section.first_page_header, section.even_page_header,
             section.footer, section.first_page_footer, section.even_page_footer,
         ]:
-            if part:
-                _process_paragraphs(part.paragraphs)
+            if part is not None:
+                parts_to_search.append(part._element)
+                
+    for base_element in parts_to_search:
+        for r_elem in base_element.xpath('.//w:r'):
+            texts = r_elem.findall(f'{{{_WNS}}}t')
+            if not texts:
+                continue
+            run_text = "".join(t.text for t in texts if t.text)
+            if _MARKER in run_text:
+                _split_run_elem_by_stars(r_elem, run_text)
 
 
 # =================================================================
