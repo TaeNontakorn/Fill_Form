@@ -51,17 +51,24 @@ class ContractResponse(BaseModel):
     Contract_start_date: str = Field(description="วันที่เริ่มต้นสัญญา")
     Contract_end_date: str = Field(description="วันที่สิ้นสุดสัญญา")
     License_fee: str = Field(description="จำนวนเงินค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุทั้งตัวเลขและตัวหนังสือ")
+    License_fee_month: str = Field(description="ค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุเป็นตัวเลข")
+    License_fee_year: str = Field(description="ค่าสิทธิการใช้โปรแกรม (License fee) รายปี ระบุทั้งตัวเลขและตัวหนังสือ")
+    Cloud_usage_description: str = Field(description="รายละเอียดการใช้งานระบบ Cloud")
     Concurrent_users: str = Field(description="จำนวนผู้ใช้งานพร้อมกัน (Concurrent Users) ที่รวมมากับโปรแกรม")
     Additional_concurrent_users: str = Field(description="จำนวนผู้ใช้งานพร้อมกันแบบซื้อเพิ่มเติม")
     Add_multi_company_count: str = Field(description="จำนวนบริษัทในเครือ (Add Multi Company)")
+    Add_multi_rate_price: str = Field(description="ราคาค่าบริการ Add Multi Company ระบุทั้งตัวเลขและตัวหนังสือ")
     Optional_module_count: str = Field(description="จำนวนระบบโมดูลเสริม (Optional Modules) ที่เลือกใช้งานเพิ่มเติม")
     Optional_module_details: str = Field(description="รายชื่อระบบโมดูลเสริม พร้อมระบุราคาต่อเดือนเป็นตัวเลขและตัวหนังสือ")
     Implement_package_name: str = Field(description="ชื่อแพคเกจสำหรับการวางระบบซอฟต์แวร์ (Implement)")
     Implement_price: str = Field(description="มูลค่าสัญญางานวางระบบ ระบุทั้งตัวเลขและตัวหนังสือ")
+    Implement_mandays: str = Field(description="จำนวนวันทำงาน (Man-day) สำหรับการวางระบบซอฟต์แวร์ (Implement)")
     Implement_payment_terms: str = Field(description="เงื่อนไขและงวดการชำระเงินสำหรับค่าวางระบบ")
     Deposit_amount: str = Field(description="จำนวนเงินมัดจำประกันการใช้โปรแกรมล่วงหน้า 2 เดือน ระบุทั้งตัวเลขและตัวหนังสือ")
     Customize_man_days: str = Field(description="จำนวนวันทำงาน (Man-day) สำหรับการพัฒนาโปรแกรมเพิ่มเติม")
     Customize_rate_per_day: str = Field(description="อัตราค่าบริการพัฒนาโปรแกรมเพิ่มเติมต่อ 1 วันทำงาน ระบุทั้งตัวเลขและตัวหนังสือ")
+    Support_rate_per_manday: str = Field(description="อัตราค่าบริการ Support ต่อ 1 วันทำงาน (Man-day) ระบุเป็นตัวเลข")
+    Support_rate_per_manday_text: str = Field(description="อัตราค่าบริการ Support ต่อ 1 วันทำงาน (Man-day) ระบุเป็นตัวหนังสือ")
     Mandays_count: str = Field(description="จำนวนวันทำงาน (Man-day) สำหรับการวางระบบซอฟต์แวร์ (Implement)")
     Manday_price: str = Field(description="ราคาต่อวันสำหรับการวางระบบซอฟต์แวร์ (Implement)")
     Quotation_id: str = Field(description="เลขที่ใบเสนอราคาที่นำมาอ้างอิงเป็นเอกสารแนบท้าย")
@@ -153,19 +160,26 @@ def analyze_with_gemini(parsed_json):
     "Contract_start_date" : วันที่เริ่มต้นสัญญา
     "Contract_end_date" : วันที่สิ้นสุดสัญญา
     "License_fee" : จำนวนเงินค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุทั้งตัวเลขและตัวหนังสือ
+    "License_fee_month" : ค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุเป็นตัวเลข
+    "License_fee_year" : ค่าสิทธิการใช้โปรแกรม (License fee) รายปี ระบุทั้งตัวเลขและตัวหนังสือ
+    "Cloud_usage_description" : รายละเอียดการใช้งานระบบ Cloud
     "Concurrent_users" : จำนวนผู้ใช้งานพร้อมกัน (Concurrent Users) ที่รวมมากับโปรแกรม
-    "Mandays_count" : จำนวนวันทำงาน (Man-day) สำหรับการวางระบบซอฟต์แวร์ (Implement)
-    "Manday_price" : ราคาต่อวันสำหรับการวางระบบซอฟต์แวร์ (Implement)
     "Additional_concurrent_users" : จำนวนผู้ใช้งานพร้อมกันแบบซื้อเพิ่มเติม
     "Add_multi_company_count" : จำนวนบริษัทในเครือ (Add Multi Company)
+    "Add_multi_rate_price" : ราคาค่าบริการ Add Multi Company ระบุทั้งตัวเลขและตัวหนังสือ
     "Optional_module_count" : จำนวนระบบโมดูลเสริม (Optional Modules) ที่เลือกใช้งานเพิ่มเติม
     "Optional_module_details" : รายชื่อระบบโมดูลเสริม พร้อมระบุราคาต่อเดือนเป็นตัวเลขและตัวหนังสือ
     "Implement_package_name" : ชื่อแพคเกจสำหรับการวางระบบซอฟต์แวร์ (Implement)
     "Implement_price" : มูลค่าสัญญางานวางระบบ ระบุทั้งตัวเลขและตัวหนังสือ
-    "Implement_payment_terms" : เงื่อนไขและงวดการชำระเงินสำหรับค่าวางระบบ
+    "Implement_mandays" : จำนวนวันทำงาน (Man-day) สำหรับการวางระบบซอฟต์แวร์ (Implement)
+    "Implement_payment_terms" : มูลค่าสัญญางานวางระบบ ระบุทั้งตัวเลขและตัวหนังสือ รูปแบบที่ต้องการเช่น "งวดที่ 1 30% ชําระเมื่อเริ่มโครงการและแผนดําเนินงาน (Kick Off Project) เป็นจํานวนเงิน 90,000.00 บาท "
     "Deposit_amount" : จำนวนเงินมัดจำประกันการใช้โปรแกรมล่วงหน้า 2 เดือน ระบุทั้งตัวเลขและตัวหนังสือ
     "Customize_man_days" : จำนวนวันทำงาน (Man-day) สำหรับการพัฒนาโปรแกรมเพิ่มเติม
     "Customize_rate_per_day" : อัตราค่าบริการพัฒนาโปรแกรมเพิ่มเติมต่อ 1 วันทำงาน ระบุทั้งตัวเลขและตัวหนังสือ
+    "Support_rate_per_manday" : อัตราค่าบริการ Support ต่อ 1 วันทำงาน (Man-day) ระบุเป็นตัวเลข
+    "Support_rate_per_manday_text" : อัตราค่าบริการ Support ต่อ 1 วันทำงาน (Man-day) ระบุเป็นตัวหนังสือ
+    "Mandays_count" : จำนวนวันทำงาน (Man-day) สำหรับการวางระบบซอฟต์แวร์ (Implement)
+    "Manday_price" : ราคาต่อวันสำหรับการวางระบบซอฟต์แวร์ (Implement)
     "Quotation_id" : เลขที่ใบเสนอราคาที่นำมาอ้างอิงเป็นเอกสารแนบท้าย
     "Quotation_date" : วันที่ของใบเสนอราคา
     "Customer_company_signature_name" : ชื่อบริษัทลูกค้าสำหรับประทับตราในหน้าลงนาม
@@ -195,8 +209,10 @@ def analyze_with_gemini(parsed_json):
     return response.text
 
 # =================================================================
-# Helper: ใส่ตัวนำทาง ★ ให้กับข้อมูลเพื่อชี้เป้าสำหรับการขีดเส้นใต้
+# Helper: ใส่ตัวนำทาง (invisible marker) ให้กับข้อมูลเพื่อชี้เป้าสำหรับการขีดเส้นใต้
 # =================================================================
+_MARKER = '\u2063'  # INVISIBLE SEPARATOR (ไม่ปรากฏในเอกสาร Word)
+
 def wrap_values(data):
     if isinstance(data, dict):
         return {k: wrap_values(v) for k, v in data.items()}
@@ -206,7 +222,7 @@ def wrap_values(data):
         # ไม่ขีดเส้นใต้คำว่า "ไม่พบข้อมูล" หรือค่าว่าง
         if data == "ไม่พบข้อมูล" or not data.strip():
             return data
-        return f"★{data}★"
+        return f"{_MARKER}{data}{_MARKER}"
     else:
         return data
 
@@ -218,7 +234,7 @@ _XSNS = 'http://www.w3.org/XML/1998/namespace'
 
 def _split_run_by_stars(run):
     full_text = run.text
-    parts = full_text.split('★')
+    parts = full_text.split(_MARKER)
     r_elem = run._r
     p_elem = r_elem.getparent()
     idx = list(p_elem).index(r_elem)
@@ -262,7 +278,7 @@ def _split_run_by_stars(run):
 
 def _process_paragraphs(paragraphs):
     for p in paragraphs:
-        runs_to_fix = [r for r in p.runs if '★' in r.text]
+        runs_to_fix = [r for r in p.runs if _MARKER in r.text]
         for r in runs_to_fix:
             _split_run_by_stars(r)
 
@@ -289,6 +305,7 @@ def process_runs_to_underline(doc):
         ]:
             if part:
                 _process_paragraphs(part.paragraphs)
+
 
 # =================================================================
 # Helper: ลบไฟล์ชั่วคราว
