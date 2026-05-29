@@ -365,7 +365,7 @@ async def generate_contract(file: UploadFile = File(...), background_tasks: Back
         
         # 5. ใส่สัญลักษณ์ ★ เพื่อเตรียมขีดเส้นใต้ และเปิดเทมเพลต Word
         wrapped_data = wrap_values(data_from_gemini)
-        doc = DocxTemplate('template.docx')
+        doc = DocxTemplate('1.สัญญาอนุญาตให้ใช้สิทธิการใช้โปรแกรมวันอังคาร.docx')
         
         # 6. เรนเดอร์ข้อมูลลงในเทมเพลตและขีดเส้นใต้ส่วนที่ถูกแทนที่
         doc.render(wrapped_data)
