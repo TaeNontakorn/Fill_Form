@@ -63,7 +63,7 @@ class ContractResponse(BaseModel):
     Implement_package_name: str = Field(description="ชื่อแพคเกจสำหรับการวางระบบซอฟต์แวร์ (Implement)")
     Implement_price: str = Field(description="มูลค่าสัญญางานวางระบบ ระบุทั้งตัวเลขและตัวหนังสือ")
     Implement_mandays: str = Field(description="จำนวนวันทำงาน (Man-day) สำหรับการวางระบบซอฟต์แวร์ (Implement)")
-    Implement_payment_terms: str = Field(description="เงื่อนไขและงวดการชำระเงินสำหรับค่าวางระบบ")
+    Implement_payment_terms: str = Field(description="เงื่อนไขและงวดการชำระเงินสำหรับค่าวางระบบ โดยต้องระบุคำว่า 'ชำระ' ต่อท้าย 'งวดที่ X' เสมอ เช่น 'งวดที่ 1 ชำระ 30%...'")
     Deposit_amount: str = Field(description="จำนวนเงินมัดจำประกันการใช้โปรแกรมล่วงหน้า 2 เดือน ระบุทั้งตัวเลขและตัวหนังสือ")
     Customize_man_days: str = Field(description="จำนวนวันทำงาน (Man-day) สำหรับการพัฒนาโปรแกรมเพิ่มเติม")
     Customize_rate_per_day: str = Field(description="อัตราค่าบริการพัฒนาโปรแกรมเพิ่มเติมต่อ 1 วันทำงาน ระบุทั้งตัวเลขและตัวหนังสือ")
@@ -172,7 +172,7 @@ def analyze_with_gemini(parsed_json):
     "Implement_package_name" : ชื่อแพคเกจสำหรับการวางระบบซอฟต์แวร์ (Implement)
     "Implement_price" : มูลค่าสัญญางานวางระบบ ระบุทั้งตัวเลขและตัวหนังสือ
     "Implement_mandays" : จำนวนวันทำงาน (Man-day) สำหรับการวางระบบซอฟต์แวร์ (Implement)
-    "Implement_payment_terms" : มูลค่าสัญญางานวางระบบ ระบุทั้งตัวเลขและตัวหนังสือ รูปแบบที่ต้องการเช่น "งวดที่ 1 ชำระ 30% ชําระเมื่อเริ่มโครงการและแผนดําเนินงาน (Kick Off Project) เป็นจํานวนเงิน 90,000.00 บาท "
+    "Implement_payment_terms" : เงื่อนไขและงวดการชำระเงินสำหรับค่าวางระบบ โดยต้องระบุคำว่า "ชำระ" ต่อท้ายคำว่า "งวดที่ X" เสมอ (เช่น "งวดที่ 1 ชำระ 30%") รูปแบบที่ต้องการเช่น "งวดที่ 1 ชำระ 30% ชำระเมื่อเริ่มโครงการและแผนดำเนินงาน (Kick Off Project) เป็นจำนวนเงิน 90,000.00 บาท"
     "Deposit_amount" : จำนวนเงินมัดจำประกันการใช้โปรแกรมล่วงหน้า 2 เดือน ระบุทั้งตัวเลขและตัวหนังสือ
     "Customize_man_days" : จำนวนวันทำงาน (Man-day) สำหรับการพัฒนาโปรแกรมเพิ่มเติม
     "Customize_rate_per_day" : อัตราค่าบริการพัฒนาโปรแกรมเพิ่มเติมต่อ 1 วันทำงาน ระบุทั้งตัวเลขและตัวหนังสือ
