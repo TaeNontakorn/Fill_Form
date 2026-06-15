@@ -2,6 +2,8 @@ import io
 import os
 import json
 import base64
+from datetime import datetime
+import requests as http_requests
 import fitz  # PyMuPDF
 import pandas as pd
 from PIL import Image
@@ -15,7 +17,7 @@ from copy import deepcopy
 from docxtpl import DocxTemplate
 from docx.oxml import OxmlElement
 
-from fastapi import FastAPI, File, UploadFile, BackgroundTasks, HTTPException
+from fastapi import FastAPI, File, UploadFile, BackgroundTasks, HTTPException, Depends, Header
 from fastapi.responses import FileResponse, Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -27,6 +29,36 @@ load_dotenv()
 API_KEY = os.environ.get("API_KEY") or os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=API_KEY)
 
+# =================================================================
+# การตั้งค่า External Authentication API
+# =================================================================
+# URL สำหรับล็อกอิน (ส่ง username/password ไปเพื่อรับ Token กลับมา)
+EXTERNAL_AUTH_LOGIN_URL = os.environ.get(
+    "EXTERNAL_AUTH_LOGIN_URL",
+    "https://qaqc.mangoanywhere.com/production.service/api/public/login"  # <-- เปลี่ยนเป็น URL จริงของท่าน
+)
+# URL สำหรับตรวจสอบ Token (ส่ง Token ไปเพื่อดูว่ายังใช้ได้อยู่หรือไม่)
+EXTERNAL_AUTH_VERIFY_URL = os.environ.get(
+    "EXTERNAL_AUTH_VERIFY_URL",
+    "https://qaqc.mangoanywhere.com/production.service/Anywhere/BD/QO_ReadData?docno=QO2603TRA001"  # <-- เปลี่ยนเป็น URL จริงของท่าน
+)
+
+# รหัสบริษัทที่ใช้ล็อกอิน (ตั้งค่าคงที่ไว้ที่หลังบ้าน ไม่ต้องกรอกจากหน้าเว็บ)
+MAINCODE = os.environ.get("MAINCODE", "MANGO")  # <-- เปลี่ยนเป็นรหัสบริษัทจริงของท่าน
+
+# URL สำหรับดึงข้อมูลใบเสนอราคา (QO_ReadData)
+EXTERNAL_QUOTATION_URL = os.environ.get(
+    "EXTERNAL_QUOTATION_URL",
+    "https://qaqc.mangoanywhere.com/production.service/Anywhere/BD/QO_ReadData"
+)
+
+class LoginRequest(BaseModel):
+    userid: str
+    userpass: str
+
+class quotation(BaseModel):
+    quotation_id: str
+    result_quotation: dict
 # =================================================================
 # Schema สำหรับ Structured Output
 # =================================================================
@@ -81,67 +113,16 @@ class ContractResponse(BaseModel):
     Customer_witness_email: str = Field(description="อีเมลของพยานฝ่ายลูกค้า")
 
 # =================================================================
-# 1. ฟังก์ชันครอป PDF
-# =================================================================
-def crop_pdf(input_path: str, output_path: str):
-    print(f"กำลังทำการครอปเอกสาร: {input_path}...")
-    doc = fitz.open(input_path)
-    for page in doc:
-        crop_box = fitz.Rect(0, 90, page.rect.width, page.rect.height - 170) 
-        page.set_cropbox(crop_box)
-    doc.save(output_path)
-    doc.close()
-    print(f"บันทึกเอกสารที่ครอปแล้วสำเร็จ\n")
-
-# =================================================================
-# 2. ฟังก์ชัน Gemini อ่านเอกสาร (ดวงตา)
-# =================================================================
-def extract_data_from_pdf(pdf_path: str):
-    print(f"กำลังส่งให้ Gemini ประมวลผลภาพเอกสาร...")
-    images = []
-    doc_cut = fitz.open(pdf_path)
-    for page in doc_cut:
-        pix = page.get_pixmap(dpi=150)
-        img = Image.open(io.BytesIO(pix.tobytes("png")))
-        img.load()  
-        images.append(img)
-    doc_cut.close()
-
-    prompt = """
-    ดึงข้อความทั้งหมดจากภาพนี้ แยกส่วนข้อความทั่วไปและส่วนตาราง 
-    เฉพาะตารางเอาแค่คอลัมน์ "Specification" และ "Total amount"
-    """
-    
-    response = client.models.generate_content(
-        model="gemini-2.5-pro", 
-        contents=images + [prompt],
-        config={
-            "response_mime_type": "application/json",
-            "response_schema": OCRResponse,
-        }
-    )
-    return response.text
-
-# =================================================================
 # 3. ฟังก์ชันสกัดข้อมูลจากเอกสารด้วย Gemini (สมอง)
 # =================================================================
 def analyze_with_gemini(parsed_json):
-    all_text = parsed_json.get("all_text", "")
-    table_items = parsed_json.get("table_data", [])
-    
-    table_string = ""
-    if table_items:
-        table_string = "ข้อมูลรายการสินค้า/บริการ:\n"
-        for idx, item in enumerate(table_items, 1):
-            table_string += f"   - รายการที่ {idx}: {item['specification']} (มูลค่า: {item['total_amount']})\n"
-    
-    document_content = f"--- ข้อมูลทั่วไปในเอกสาร ---\n{all_text}\n\n--- ตารางรายการ ---\n{table_string}"
+    document_content = json.dumps(parsed_json, ensure_ascii=False, indent=2)
     
     prompt = f"""
-    นี่คือข้อมูลที่อ่านได้จากเอกสาร:
+    นี่คือข้อมูลใบเสนอราคาจากระบบ (JSON Format):
     {document_content}
     
-    หน้าที่ของคุณคือ สกัดข้อมูลจากเอกสารด้านบนตามหัวข้อที่กำหนด และต้องตอบกลับมาในรูปแบบ JSON เท่านั้น
+    หน้าที่ของคุณคือ สกัดข้อมูลจากใบเสนอราคานี้ตามหัวข้อที่กำหนด และต้องตอบกลับมาในรูปแบบ JSON เท่านั้น
     
     [กฎข้อบังคับที่ต้องทำตามอย่างเคร่งครัด]
     1. ห้ามมีข้อความเกริ่นนำ ข้อความสรุป หรือคำอธิบายใดๆ ทั้งสิ้น ให้ตอบกลับมาแค่โครงสร้างปีกกา {{...}} ของ JSON เท่านั้น
@@ -316,38 +297,141 @@ app = FastAPI(title="Mango Contract Generation API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://fillform-xyxpfdsz2ey4o8dx7ekted.streamlit.app"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# =================================================================
+# Authentication: Login Proxy & Token Verification
+# =================================================================
+@app.post("/login")
+async def login(credentials: LoginRequest):
+    """
+    Proxy ล็อกอิน: รับ username/password จากหน้าบ้าน
+    แล้วส่งต่อไปยัง API ภายนอกเพื่อขอ Token
+    """
+    try:
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] พยายามล็อกอิน: userid={credentials.userid}")
+        response = http_requests.post(
+            EXTERNAL_AUTH_LOGIN_URL,
+            json={
+                "maincode": MAINCODE,
+                "userid": credentials.userid,
+                "userpass": credentials.userpass,
+            },
+            timeout=300,
+        )
+        if response.status_code == 200:
+            result = response.json()
+            success = result.get("success", False) if isinstance(result, dict) else bool(result)
+            if success:
+                print(f"[✅ สำเร็จ] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] userid={credentials.userid}")
+            else:
+                error_msg = result.get("error", "ไม่ทราบสาเหตุ") if isinstance(result, dict) else ""
+                print(f"[❌ ล้มเหลว] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] userid={credentials.userid} | error={error_msg}")
+            return result
+        else:
+            print(f"[❌ ล้มเหลว] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] userid={credentials.userid} | HTTP {response.status_code}")
+            try:
+                detail = response.json().get("detail", "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+            except Exception:
+                detail = "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"
+            raise HTTPException(status_code=response.status_code, detail=detail)
+    except http_requests.exceptions.ConnectionError:
+        print(f"[❌ เชื่อมต่อไม่ได้] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] userid={credentials.userid}")
+        raise HTTPException(
+            status_code=503,
+            detail="ไม่สามารถเชื่อมต่อกับระบบยืนยันตัวตนภายนอกได้ กรุณาลองใหม่อีกครั้ง",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[❌ ข้อผิดพลาด] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] userid={credentials.userid} | {str(e)}")
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการล็อกอิน: {str(e)}")
+
+
+async def verify_token(authorization: str = Header(None)):
+    """
+    Dependency: ตรวจสอบ Token โดยส่งไปยัง API ภายนอก
+    ถ้า Token ถูกต้อง คืนข้อมูลผู้ใช้ ถ้าไม่ถูกต้องจะ raise 401
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="กรุณาเข้าสู่ระบบก่อนใช้งาน")
+
+    token = authorization.split("Bearer ", 1)[1]
+    try:
+        response = http_requests.get(
+            EXTERNAL_AUTH_VERIFY_URL,
+            headers={"X-Mango-Auth": token},
+            timeout=15,
+        )
+        if response.status_code == 200:
+            return response.json()  # คืนข้อมูลผู้ใช้
+        else:
+            raise HTTPException(status_code=401, detail="Token หมดอายุหรือไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="ไม่สามารถตรวจสอบสิทธิ์การใช้งานได้")
+
+
+@app.get("/quotation/{quotation_id}")
+async def get_quotation(quotation_id: str, authorization: str = Header(None)):
+    """
+    ดึงข้อมูลใบเสนอราคาจากระบบภายนอก โดยใช้เลขที่ใบเสนอราคา
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="กรุณาเข้าสู่ระบบก่อนใช้งาน")
+
+    token = authorization.split("Bearer ", 1)[1]
+
+    try:
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ดึงข้อมูลใบเสนอราคา: {quotation_id}")
+        response_quotation = http_requests.get(
+            EXTERNAL_QUOTATION_URL,
+            params={"docno": quotation_id},
+            headers={"X-Mango-Auth": token},
+            timeout=30,
+        )
+
+        if response_quotation.status_code == 200:
+            result_quotation = response_quotation.json()
+            print(f"[✅ สำเร็จ] ดึงข้อมูลใบเสนอราคา: {quotation_id}")
+            return result_quotation
+        else:
+            print(f"[❌ ล้มเหลว] ดึงข้อมูลใบเสนอราคา: {quotation_id} | HTTP {response_quotation.status_code}")
+            raise HTTPException(
+                status_code=response_quotation.status_code,
+                detail=f"ไม่สามารถดึงข้อมูลใบเสนอราคาได้ (HTTP {response_quotation.status_code})",
+            )
+    except HTTPException:
+        raise
+    except http_requests.exceptions.ConnectionError:
+        raise HTTPException(status_code=503, detail="ไม่สามารถเชื่อมต่อกับระบบภายนอกได้")
+    except Exception as e:
+        print(f"[❌ ข้อผิดพลาด] ดึงข้อมูลใบเสนอราคา: {quotation_id} | {str(e)}")
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการดึงข้อมูล: {str(e)}")
+
+
 @app.post("/generate-contract")
-async def generate_contract(file: UploadFile = File(...), background_tasks: BackgroundTasks = BackgroundTasks()):
-    # ตรวจสอบว่าเป็นไฟล์ PDF หรือไม่
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="กรุณาอัพโหลดเฉพาะไฟล์ PDF เท่านั้น")
-    
+async def generate_contract(
+    payload: quotation,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    current_user: dict = Depends(verify_token),
+):
     # สร้าง ID เฉพาะและโฟลเดอร์สำหรับเก็บไฟล์ชั่วคราว
     file_id = str(uuid.uuid4())
     temp_dir = os.path.join(os.getcwd(), "temp_files")
     os.makedirs(temp_dir, exist_ok=True)
-    
-    input_pdf_path = os.path.join(temp_dir, f"input_{file_id}.pdf")
-    cropped_pdf_path = os.path.join(temp_dir, f"cropped_{file_id}.pdf")
     output_docx_path = os.path.join(temp_dir, f"contract_{file_id}.docx")
-    
+
     try:
-        # 1. เซฟไฟล์ PDF ที่อัพโหลดเข้ามาลงไดรฟ์
-        with open(input_pdf_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        # 2. ครอป PDF เพื่อเอาหัว/ท้ายออก
-        crop_pdf(input_pdf_path, cropped_pdf_path)
+        parsed_json = payload.result_quotation
+        quotation_id = payload.quotation_id
         
-        # 3. ใช้ Gemini แกะข้อความทั่วไปและข้อความในตาราง (OCR)
-        raw_json_result = extract_data_from_pdf(cropped_pdf_path)
-        parsed_json = json.loads(raw_json_result)
+        print(f"[✅ สำเร็จ] กำลังสร้างสัญญาจากใบเสนอราคา: {quotation_id}")
         
         # 4. ใช้ Gemini วิเคราะห์ข้อมูลทางธุรกิจออกมาเป็น JSON ก้อนเดียว
         gemini_analysis = analyze_with_gemini(parsed_json)
@@ -368,20 +452,19 @@ async def generate_contract(file: UploadFile = File(...), background_tasks: Back
         with open(output_docx_path, "rb") as f:
             file_bytes = f.read()
 
-        # ลบไฟล์ชั่วคราวทั้งหมดทันทีหลังอ่านเสร็จแล้ว (ปลอดภัยกว่า BackgroundTask)
-        cleanup_temp_files(input_pdf_path, cropped_pdf_path, output_docx_path)
+        # ลบไฟล์ชั่วคราวทั้งหมดทันทีหลังอ่านเสร็จแล้ว
+        cleanup_temp_files(output_docx_path)
 
         # แปลงไฟล์ docx เป็น base64 เพื่อส่งผ่าน JSON ได้โดยไม่มีปัญหาขนาด header
-        original_name_without_ext = os.path.splitext(file.filename)[0]
         return JSONResponse(content={
             "file_base64": base64.b64encode(file_bytes).decode("ascii"),
-            "file_name": f"สัญญา_{original_name_without_ext}.docx",
+            "file_name": f"สัญญา_{quotation_id}.docx",
             "contract_data": data_from_gemini,
         })
         
     except Exception as e:
         # ในกรณีที่เกิดความผิดพลาด ลบไฟล์ชั่วคราวทันทีเพื่อไม่ให้ค้างคา
-        cleanup_temp_files(input_pdf_path, cropped_pdf_path, output_docx_path)
+        cleanup_temp_files(output_docx_path)
         print(f"เกิดข้อผิดพลาดในระบบ: {e}")
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการประมวลผลเอกสาร: {str(e)}")
 
