@@ -1,0 +1,11 @@
+.env
+__pycache__/
+temp_files/
+frontend/node_modules/
+frontend/dist/
+frontend/dev_out.log
+frontend/dev_err.log
+*.log
+backend_err.log
+streamlit_out.log
+streamlit_err.log
