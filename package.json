@@ -1,0 +1,11 @@
+{
+  "name": "fill-form",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "preview": "npm run preview --prefix frontend",
+    "install:frontend": "cd frontend && npm install",
+    "backend": "python back_end.py"
+  }
+}
