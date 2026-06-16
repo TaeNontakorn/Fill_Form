@@ -1,3 +1,4 @@
+<!-- Template -->
 <template>
   <div class="home-wrapper">
     <!-- Sidebar -->
@@ -128,7 +129,7 @@
     </main>
   </div>
 </template>
-
+<!-- Script -->
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -217,7 +218,7 @@ function downloadFile() {
   URL.revokeObjectURL(url)
 }
 </script>
-
+<!-- Styles -->
 <style scoped>
 .home-wrapper {
   min-height: 100vh;
