@@ -16,6 +16,10 @@ from dotenv import load_dotenv
 from copy import deepcopy
 from docxtpl import DocxTemplate
 from docx.oxml import OxmlElement
+from pydantic import BaseModel
+from typing import List, Optional
+import ast
+import re
 
 from fastapi import FastAPI, File, UploadFile, BackgroundTasks, HTTPException, Depends, Header
 from fastapi.responses import FileResponse, Response, JSONResponse
@@ -66,6 +70,32 @@ class LoginRequest(BaseModel):
 class quotation(BaseModel):
     quotation_id: str
     result_quotation: dict
+    
+    
+class CleanItem(BaseModel):
+    item_name: str
+    quantity: float
+    unit: str
+    price: float  # เลือกระหว่าง net_amount หรือ sell_amount
+    remark: Optional[str] = None
+
+class CleanPaymentTerm(BaseModel):
+    period: str
+    description: str
+    amount: float
+
+class CleanQuotationData(BaseModel):
+    quotation_id: str
+    quotation_date: str
+    customer_name: str
+    customer_address: str
+    total_amount: float
+    products_and_services: List[CleanItem]
+    payment_terms: List[CleanPaymentTerm]
+    terms_and_conditions: str  # รวมข้อความเงื่อนไขทั้งหมดไว้ให้ AI อ่านง่ายๆ
+    
+    
+    
 # =================================================================
 # Schema สำหรับ Structured Output
 # =================================================================
@@ -84,14 +114,14 @@ class ContractResponse(BaseModel):
     Standard_module_count: str = Field(description="จำนวน Module มาตรฐานที่ได้รับสิทธิ")
     Standard_module_name: str = Field(description="ชื่อแพ็กเกจหรือประเภทสำหรับ Module มาตรฐาน")
     Standard_users_count: str = Field(description="จำนวนผู้ใช้งานเบื้องต้นสำหรับระบบมาตรฐาน")
-    Contract_start_date: str = Field(description="วันที่เริ่มต้นสัญญา")
-    Contract_end_date: str = Field(description="วันที่สิ้นสุดสัญญา")
+
     License_fee: str = Field(description="จำนวนเงินค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุทั้งตัวเลขและตัวหนังสือ")
     License_fee_month: str = Field(description="ค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุเป็นตัวเลข")
     License_fee_year: str = Field(description="ค่าสิทธิการใช้โปรแกรม (License fee) รายปี ระบุทั้งตัวเลขและตัวหนังสือ")
     Cloud_usage_description: str = Field(description="รายละเอียดการใช้งานระบบ Cloud")
     Concurrent_users: str = Field(description="จำนวนผู้ใช้งานพร้อมกัน (Concurrent Users) ที่รวมมากับโปรแกรม")
     Additional_concurrent_users: str = Field(description="จำนวนผู้ใช้งานพร้อมกันแบบซื้อเพิ่มเติม")
+    Add_concurrent_rate_price: str = Field(description="ราคาค่าบริการ Add Concurrent Users ระบุทั้งตัวเลขและตัวหนังสือ")
     Add_multi_company_count: str = Field(description="จำนวนบริษัทในเครือ (Add Multi Company)")
     Add_multi_rate_price: str = Field(description="ราคาค่าบริการ Add Multi Company ระบุทั้งตัวเลขและตัวหนังสือ")
     Optional_module_count: str = Field(description="จำนวนระบบโมดูลเสริม (Optional Modules) ที่เลือกใช้งานเพิ่มเติม")
@@ -177,11 +207,124 @@ def extract_json_from_qwen_response(response_text: str) -> str:
     print(f"[DEBUG] fallback return stripped response, len={len(result)}")
     return result
 
+
+# Robust JSON parsing: try json.loads, ast.literal_eval, and simple fallbacks
+def try_parse_json(text: str):
+    text = (text or '').strip()
+    import json
+    if not text:
+        raise json.JSONDecodeError("Empty response", text, 0)
+
+    # 1) Standard JSON
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # 2) Python literal (single quotes) via ast
+    try:
+        obj = ast.literal_eval(text)
+        # ast.literal_eval can return non-dict/list (e.g., a string) — keep as-is
+        return obj
+    except Exception:
+        pass
+
+    # 3) Heuristic: replace single quotes with double quotes when there are no double quotes
+    try:
+        s = text
+        if '"' not in s and "'" in s:
+            s = s.replace("'", '"')
+        # remove trailing commas before } or ]
+        s = re.sub(r",\s*([}\]])", r"\1", s)
+        return json.loads(s)
+    except Exception as e:
+        raise json.JSONDecodeError(str(e), text, 0)
+
+# =================================================================
+# Clean and filter quotation data Json
+# =================================================================
+
+def filter_and_clean_quotation(raw_json: dict) -> CleanQuotationData:
+    data = raw_json.get("data", {})
+    header = data.get("header", {})
+    details = data.get("detail", [])
+    detail2 = data.get("detail2", []) # รายการสินค้า/บริการ
+    detail3 = data.get("detail3", []) # พวกเงื่อนไขและหมายเหตุยาวๆ
+    detail4 = data.get("detail4", []) # งวดการชำระเงิน
+
+    # 2.1 รวมที่อยู่ลูกค้า
+    address_parts = [
+        header.get("address1", ""),
+        header.get("address2", ""),
+        header.get("address3", "")
+    ]
+    full_address = " ".join([p for p in address_parts if p]).strip()
+    
+    amount = header.get("amount", 0.0)
+    discount = header.get("total_discount", 0.0)
+    vat = header.get("vat_amount", 0.0)
+    
+    # 2.2 กรองรายการสินค้า/บริการ (เอาเฉพาะฟิลด์ที่จำเป็น)
+    clean_items = []
+    for item in details:
+        name = item.get("type_name")
+        if name:
+            # บางรายการ net_amount เป็น 0 แต่มี sell_amount เราจึงใช้ดักไว้
+            price = item.get("sell_amount") or 0.0
+            clean_items.append(CleanItem(
+                item_name=name.strip(),
+                quantity=item.get("qty", 0.0),
+                unit=item.get("unitname", ""),
+                price=price,
+                remark=item.get("mat_other")
+            ))
+
+    # 2.3 กรองงวดการชำระเงิน
+    clean_payment_terms = []
+    for term in detail4:
+        clean_payment_terms.append(CleanPaymentTerm(
+            period=term.get("desc_period", ""),
+            description=term.get("description", ""),
+            amount=term.get("amt", 0.0)
+        ))
+
+    # 2.4 รวม Text เงื่อนไขทั้งหมดจาก detail3 เป็นก้อนเดียวให้ AI อ่านเพื่อดึงค่า
+    # เช่น ค่า Man-day 14,000, ค่า Customize 20,000 จะซ่อนอยู่ในนี้
+    tnc_lines = [d.get("remark", "") for d in detail3 if d.get("remark")]
+    full_tnc_text = "\n".join(tnc_lines)
+
+    # 2.5 ประกอบร่างข้อมูลใหม่
+    cleaned_data = CleanQuotationData(
+        quotation_id=header.get("docno", ""),
+        quotation_date=header.get("docdate", ""),
+        customer_name=header.get("customer_name", ""),
+        customer_address=full_address,
+        total_amount=amount - discount + vat,
+        products_and_services=clean_items,
+        payment_terms=clean_payment_terms,
+        terms_and_conditions=full_tnc_text
+    )
+    
+    return cleaned_data
+
 # =================================================================
 # 3. ฟังก์ชันสกัดข้อมูลจากเอกสารด้วย Qwen
 # =================================================================
 def analyze_with_qwen(parsed_json):
-    document_content = json.dumps(parsed_json, ensure_ascii=False, indent=2)
+    if isinstance(parsed_json, BaseModel):
+        # Pydantic v2: avoid using BaseModel.json(...) with dumps kwargs
+        # which may raise "dumps_kwargs keyword arguments are no longer supported".
+        try:
+            model_data = parsed_json.model_dump()
+        except Exception:
+            # Fallback: convert via the public json() then load back to dict
+            try:
+                model_data = json.loads(parsed_json.json())
+            except Exception:
+                model_data = {}
+        document_content = json.dumps(model_data, ensure_ascii=False, indent=2)
+    else:
+        document_content = json.dumps(parsed_json, ensure_ascii=False, indent=2)
     
     prompt = f"""
     นี่คือข้อมูลใบเสนอราคาจากระบบ (JSON Format):
@@ -200,20 +343,20 @@ def analyze_with_qwen(parsed_json):
     "Customer_tax_id" : เลขทะเบียนนิติบุคคลของบริษัทลูกค้า
     "Customer_director_name" : ชื่อกรรมการบริษัท หรือผู้รับมอบอำนาจของบริษัทลูกค้า
     "Customer_address" : ที่ตั้งสำนักงานของบริษัทลูกค้า
-    "Standard_module_count" : จำนวน Module มาตรฐานที่ได้รับสิทธิ
+    "Standard_module_count" : จำนวน Module มาตรฐานที่ได้รับสิทธิในการใช้งานโดยที่ไม่ต้องซื้อเพิ่ม เช่น "Mango Anywhere Standard Software 13 Modules" จะได้ค่าเป็น 13 เป็นต้น
     "Standard_module_name" : ชื่อแพ็กเกจหรือประเภทสำหรับ Module มาตรฐาน
-    "Standard_users_count" : จำนวนผู้ใช้งานเบื้องต้นสำหรับระบบมาตรฐาน
-    "Contract_start_date" : วันที่เริ่มต้นสัญญา
-    "Contract_end_date" : วันที่สิ้นสุดสัญญา
+    "Standard_users_count" : จำนวนผู้ใช้งานเบื้องต้นสำหรับระบบมาตรฐานที่แถมให้กับโปรแกรมไม่ต้องซื้อเพิ่ม
+
     "License_fee" : จำนวนเงินค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุทั้งตัวเลขและตัวหนังสือ
     "License_fee_month" : ค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุเป็นตัวเลข
     "License_fee_year" : ค่าสิทธิการใช้โปรแกรม (License fee) รายปี ระบุทั้งตัวเลขและตัวหนังสือ
     "Cloud_usage_description" : รายละเอียดการใช้งานระบบ Cloud
     "Concurrent_users" : จำนวนผู้ใช้งานพร้อมกัน (Concurrent Users) ที่รวมมากับโปรแกรม
-    "Additional_concurrent_users" : จำนวนผู้ใช้งานพร้อมกันแบบซื้อเพิ่มเติม
-    "Add_multi_company_count" : จำนวนบริษัทในเครือ (Add Multi Company)
+    "Additional_concurrent_users" : จำนวนผู้ใช้งานพร้อมกันแบบซื้อเพิ่มเติมจากโปรแกรมที่มีมาให้เช่น "Add 5 Concurrent Users (Free of charge)  5 คน แบบที่แถมให้แต่จะมีการบอกไว้ว่า "รวม User ที่สามารถเข้าใช้งานโปรแกรมได้ทั้งหมด 10 Users (Concurrent user)" แสดงว่าจะมีการซื้อเพิ่มเติม จะได้เป็น 5 เป็นต้น
+    "Add_concurrent_rate_price" : ราคาค่าบริการ Add Concurrent Users ระบุทั้งตัวเลขและตัวหนังสือ
+    "Add_multi_company_count" : จำนวนบริษัทในเครือ (Add Multi Company) ที่ต้องการเพิ่มนอกจากตัวของบริษัทลูกค้าเอง เช่น "Add Multi Company 2 บริษัท" จะได้ค่าเป็น 2 เป็นต้น
     "Add_multi_rate_price" : ราคาค่าบริการ Add Multi Company ระบุทั้งตัวเลขและตัวหนังสือ
-    "Optional_module_count" : จำนวนระบบโมดูลเสริม (Optional Modules) ที่เลือกใช้งานเพิ่มเติม
+    "Optional_module_count" : จำนวนระบบโมดูลเสริม (Optional Modules) ที่เลือกใช้งานเพิ่มเติมนอกจาก Module มาตรฐาน เช่น "Project Management & QCM , CSM " เป็นต้น จะถือว่าเป็นการซื้อโมดูลเสริมจำนวน 2 Module เสริม เป็นต้น
     "Optional_module_details" : รายชื่อระบบโมดูลเสริม พร้อมระบุราคาต่อเดือนเป็นตัวเลขและตัวหนังสือ
     "Implement_package_name" : ชื่อแพคเกจสำหรับการวางระบบซอฟต์แวร์ (Implement)
     "Implement_price" : มูลค่าสัญญางานวางระบบ ระบุทั้งตัวเลขและตัวหนังสือ
@@ -223,7 +366,7 @@ def analyze_with_qwen(parsed_json):
     "Customize_man_days" : จำนวนวันทำงาน (Man-day) สำหรับการพัฒนาโปรแกรมเพิ่มเติม
     "Customize_rate_per_day" : อัตราค่าบริการพัฒนาโปรแกรมเพิ่มเติมต่อ 1 วันทำงาน ระบุทั้งตัวเลขและตัวหนังสือ
     "Support_rate_per_manday" : อัตราค่าบริการ Support ต่อ 1 วันทำงาน (Man-day) ระบุเป็นตัวเลข
-    "Support_rate_per_manday_text" : อัตราค่าบริการ Support ต่อ 1 วันทำงาน (Man-day) ระบุเป็นตัวหนังสือ
+    "Support_rate_per_manday_text" : อัตราค่าบริการ Support ต่อ 1 วันทำงาน (Man-day) ระบุเป็นตัวหนังสือเช่น "หนึ่งหมื่นบาทถ้วน"
     "Mandays_count" : จำนวนวันทำงาน (Man-day) สำหรับการวางระบบซอฟต์แวร์ (Implement)
     "Manday_price" : ราคาต่อวันสำหรับการวางระบบซอฟต์แวร์ (Implement)
     "Quotation_id" : เลขที่ใบเสนอราคาที่นำมาอ้างอิงเป็นเอกสารแนบท้าย
@@ -247,18 +390,24 @@ def analyze_with_qwen(parsed_json):
     response = client.chat.completions.create(
         model="qwen3.6-35b-a3b",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.1,
+        temperature=0.1
         
     )
     print(f"[DEBUG] Qwen API response received, choices={len(response.choices)}")
     choice = response.choices[0]
+
     raw_response = None
     if hasattr(choice, 'message'):
-        raw_response = getattr(choice.message, 'content', None)
-        if raw_response is None and isinstance(choice.message, dict):
-            raw_response = choice.message.get('content')
+        message_obj = choice.message
+        if isinstance(message_obj, dict):
+            raw_response = message_obj.get('content') or message_obj.get('reasoning')
+        else:
+            raw_response = getattr(message_obj, 'content', None) or getattr(message_obj, 'reasoning', None)
     elif isinstance(choice, dict):
-        raw_response = choice.get('message', {}).get('content')
+        raw_response = choice.get('message', {}).get('content') or choice.get('message', {}).get('reasoning')
+
+    if raw_response is None and hasattr(choice, 'reasoning'):
+        raw_response = choice.reasoning
 
     print(f"[DEBUG] raw_response object={type(raw_response).__name__} content={raw_response if raw_response is not None else 'None'}")
     if raw_response is None:
@@ -267,6 +416,9 @@ def analyze_with_qwen(parsed_json):
             status_code=500,
             detail="Qwen returned no message content. ตรวจสอบ raw response และ response structure."
         )
+
+    if isinstance(raw_response, bytes):
+        raw_response = raw_response.decode('utf-8', errors='ignore')
 
     print(f"[DEBUG] raw_response len={len(raw_response)} preview={raw_response[:300]!r}")
     clean_json = extract_json_from_qwen_response(raw_response)
@@ -284,15 +436,22 @@ def wrap_values(data):
     elif isinstance(data, list):
         return [wrap_values(item) for item in data]
     elif isinstance(data, str):
-        # ไม่ขีดเส้นใต้คำว่า "ไม่พบข้อมูล" หรือค่าว่าง
-        if data == "ไม่พบข้อมูล" or not data.strip():
+        # ไม่ขีดเส้นใต้สตริงว่าง แต่ให้ขีดเส้นใต้ "ไม่พบข้อมูล"
+        if not data.strip():
             return data
         
         # ลบอักขระส่วนเกินที่ขอบ (เช่น เครื่องหมายจุลภาค, คำพูด) ออกไปให้ข้อความ "โล้นๆ" ตามที่ต้องการ
         cleaned_data = data.strip(' \t\n\r\'",')
         return f"{_MARKER}{cleaned_data}{_MARKER}"
-    else:
+    elif data is None:
         return data
+    else:
+        # Wrap all scalar non-string values so they also get highlighted/underlined
+        value_str = str(data)
+        if not value_str.strip():
+            return value_str
+        cleaned_data = value_str.strip(' \t\n\r\'\",')
+        return f"{_MARKER}{cleaned_data}{_MARKER}"
 
 
 # Helper: แยก run ที่มี ★ ออกเป็นหลาย run → ใส่สีแดง+ขีดเส้นใต้เฉพาะส่วนที่ fill
@@ -342,9 +501,9 @@ def _split_run_elem_by_stars(r_elem, full_text):
         insert_idx += 1
 
 def process_runs_to_underline(doc):
-    parts_to_search = [doc.docx.element.body]
+    parts_to_search = [doc.element.body]
     
-    for section in doc.docx.sections:
+    for section in doc.sections:
         for part in [
             section.header, section.first_page_header, section.even_page_header,
             section.footer, section.first_page_footer, section.even_page_footer,
@@ -517,18 +676,25 @@ async def generate_contract(
         parsed_json = payload.result_quotation
         quotation_id = payload.quotation_id
         
+        # 2. ทำความสะอาดและกรองข้อมูลใบเสนอราคา
+        cleaned_data = filter_and_clean_quotation(parsed_json)
         print(f"[✅ สำเร็จ] กำลังสร้างสัญญาจากใบเสนอราคา: {quotation_id}")
         
         # 4. ใช้ Qwen วิเคราะห์ข้อมูลทางธุรกิจออกมาเป็น JSON ก้อนเดียว
-        qwen_analysis = analyze_with_qwen(parsed_json)
+        
+        qwen_analysis = analyze_with_qwen(cleaned_data)
+        
         print(f"[DEBUG] qwen_analysis len={len(qwen_analysis)} preview={qwen_analysis[:300]!r}")
         try:
-            data_from_qwen = json.loads(qwen_analysis)
+            data_from_qwen = try_parse_json(qwen_analysis)
             print(f"[✅ JSON Valid] สำเร็จการแยก JSON จาก Qwen")
-            print(f"[DEBUG] parsed data keys={list(data_from_qwen.keys())[:10]}")
-        except json.JSONDecodeError as e:
+            if isinstance(data_from_qwen, dict):
+                print(f"[DEBUG] parsed data keys={list(data_from_qwen.keys())[:10]}")
+            else:
+                print(f"[DEBUG] parsed data type={type(data_from_qwen).__name__}")
+        except Exception as e:
             print(f"[❌ JSON Error] ไม่สามารถแยก JSON: {str(e)}")
-            print(f"[Debug] Raw Response: {qwen_analysis[:400]}...")
+            print(f"[Debug] Raw Response (truncated): {qwen_analysis[:800]}...")
             raise HTTPException(
                 status_code=500,
                 detail=f"Qwen ส่งกลับข้อมูลที่ไม่ใช่ JSON: {str(e)}"
