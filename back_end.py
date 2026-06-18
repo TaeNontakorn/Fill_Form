@@ -7,7 +7,7 @@ import requests as http_requests
 import fitz  # PyMuPDF
 import pandas as pd
 from PIL import Image
-from google import genai
+from openai import OpenAI
 from pydantic import BaseModel, Field
 import sys
 import uuid
@@ -25,9 +25,16 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.stdout.reconfigure(encoding='utf-8')
 load_dotenv()
 
-# ตั้งค่าโมเดล Gemini
-API_KEY = os.environ.get("API_KEY") or os.environ.get("GEMINI_API_KEY")
-client = genai.Client(api_key=API_KEY)
+# ตั้งค่าโมเดล Qwen
+QWEN_API_KEY = os.environ.get("QWEN_API_KEY")
+QWEN_API_BASE_URL = os.environ.get("QWEN_API_BASE_URL")
+client = OpenAI(
+    base_url=QWEN_API_BASE_URL,
+    api_key=QWEN_API_KEY
+)
+print(f"[DEBUG] QWEN_API_KEY loaded: {bool(QWEN_API_KEY)}")
+print(f"[DEBUG] QWEN_API_BASE_URL: {QWEN_API_BASE_URL}")
+
 
 # =================================================================
 # การตั้งค่า External Authentication API
@@ -66,9 +73,6 @@ class TableItem(BaseModel):
     specification: str = Field(description="รายละเอียดสินค้า รายละเอียดบริการ หรือข้อกำหนด/รายการในตาราง")
     total_amount: str = Field(description="ราคารวม จำนวนเงิน หรือมูลค่าประจำรายการนั้น")
 
-class OCRResponse(BaseModel):
-    all_text: str = Field(description="ข้อความทั่วไปทั้งหมดจากเอกสาร ไม่รวมข้อมูลตาราง")
-    table_data: list[TableItem] = Field(description="ข้อมูลตาราง")
 
 class ContractResponse(BaseModel):
     Contract_id: str = Field(description="สัญญาเลขที่")
@@ -113,9 +117,70 @@ class ContractResponse(BaseModel):
     Customer_witness_email: str = Field(description="อีเมลของพยานฝ่ายลูกค้า")
 
 # =================================================================
-# 3. ฟังก์ชันสกัดข้อมูลจากเอกสารด้วย Gemini (สมอง)
+# Helper: แยก JSON จาก Qwen response (อาจมี markdown code blocks)
 # =================================================================
-def analyze_with_gemini(parsed_json):
+def extract_json_from_qwen_response(response_text: str) -> str:
+    """
+    แยก JSON จาก Qwen response ที่อาจมีมาร์กดาวน์ code blocks หรือข้อความล้อมรอบ
+    """
+    import re
+    print(f"[DEBUG] extract_json_from_qwen_response start, raw len={len(response_text)}")
+
+    # Try 1: Extract from markdown JSON code block
+    if '```json' in response_text:
+        parts = response_text.split('```json', 1)[1].split('```', 1)
+        if parts:
+            result = parts[0].strip()
+            print(f"[DEBUG] extracted from ```json block, len={len(result)}")
+            return result
+
+    # Try 2: Extract from generic markdown code block
+    if '```' in response_text:
+        parts = response_text.split('```', 2)
+        if len(parts) >= 3:
+            candidate = parts[1].strip()
+            if candidate.lower().startswith('json'):
+                candidate = candidate.split('\n', 1)[1].strip() if '\n' in candidate else candidate
+            print(f"[DEBUG] extracted from generic ``` block, len={len(candidate)}")
+            return candidate
+
+    # Try 3: Extract the first balanced JSON object from text
+    start = response_text.find('{')
+    if start != -1:
+        depth = 0
+        in_string = False
+        escape = False
+        for idx in range(start, len(response_text)):
+            ch = response_text[idx]
+            if escape:
+                escape = False
+                continue
+            if ch == '\\':
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    result = response_text[start:idx+1].strip()
+                    print(f"[DEBUG] extracted balanced JSON object, len={len(result)}")
+                    return result
+
+    # Fallback: trim whitespace
+    result = response_text.strip()
+    print(f"[DEBUG] fallback return stripped response, len={len(result)}")
+    return result
+
+# =================================================================
+# 3. ฟังก์ชันสกัดข้อมูลจากเอกสารด้วย Qwen
+# =================================================================
+def analyze_with_qwen(parsed_json):
     document_content = json.dumps(parsed_json, ensure_ascii=False, indent=2)
     
     prompt = f"""
@@ -179,15 +244,34 @@ def analyze_with_gemini(parsed_json):
     }}
     """
     
-    response = client.models.generate_content(
-        model="gemini-2.5-pro", 
-        contents=[prompt],
-        config={
-            "response_mime_type": "application/json",
-            "response_schema": ContractResponse,
-        }
+    response = client.chat.completions.create(
+        model="qwen3.6-35b-a3b",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+        
     )
-    return response.text
+    print(f"[DEBUG] Qwen API response received, choices={len(response.choices)}")
+    choice = response.choices[0]
+    raw_response = None
+    if hasattr(choice, 'message'):
+        raw_response = getattr(choice.message, 'content', None)
+        if raw_response is None and isinstance(choice.message, dict):
+            raw_response = choice.message.get('content')
+    elif isinstance(choice, dict):
+        raw_response = choice.get('message', {}).get('content')
+
+    print(f"[DEBUG] raw_response object={type(raw_response).__name__} content={raw_response if raw_response is not None else 'None'}")
+    if raw_response is None:
+        print(f"[DEBUG] full choice object: {choice}")
+        raise HTTPException(
+            status_code=500,
+            detail="Qwen returned no message content. ตรวจสอบ raw response และ response structure."
+        )
+
+    print(f"[DEBUG] raw_response len={len(raw_response)} preview={raw_response[:300]!r}")
+    clean_json = extract_json_from_qwen_response(raw_response)
+    print(f"[DEBUG] clean_json len={len(clean_json)} preview={clean_json[:300]!r}")
+    return clean_json
 
 # =================================================================
 # Helper: ใส่ตัวนำทาง (invisible marker) ให้กับข้อมูลเพื่อชี้เป้าสำหรับการขีดเส้นใต้
@@ -435,12 +519,23 @@ async def generate_contract(
         
         print(f"[✅ สำเร็จ] กำลังสร้างสัญญาจากใบเสนอราคา: {quotation_id}")
         
-        # 4. ใช้ Gemini วิเคราะห์ข้อมูลทางธุรกิจออกมาเป็น JSON ก้อนเดียว
-        gemini_analysis = analyze_with_gemini(parsed_json)
-        data_from_gemini = json.loads(gemini_analysis)
+        # 4. ใช้ Qwen วิเคราะห์ข้อมูลทางธุรกิจออกมาเป็น JSON ก้อนเดียว
+        qwen_analysis = analyze_with_qwen(parsed_json)
+        print(f"[DEBUG] qwen_analysis len={len(qwen_analysis)} preview={qwen_analysis[:300]!r}")
+        try:
+            data_from_qwen = json.loads(qwen_analysis)
+            print(f"[✅ JSON Valid] สำเร็จการแยก JSON จาก Qwen")
+            print(f"[DEBUG] parsed data keys={list(data_from_qwen.keys())[:10]}")
+        except json.JSONDecodeError as e:
+            print(f"[❌ JSON Error] ไม่สามารถแยก JSON: {str(e)}")
+            print(f"[Debug] Raw Response: {qwen_analysis[:400]}...")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Qwen ส่งกลับข้อมูลที่ไม่ใช่ JSON: {str(e)}"
+            )
         
         # 5. ใส่สัญลักษณ์ ★ เพื่อเตรียมขีดเส้นใต้ และเปิดเทมเพลต Word
-        wrapped_data = wrap_values(data_from_gemini)
+        wrapped_data = wrap_values(data_from_qwen)
         doc = DocxTemplate('1.สัญญาอนุญาตให้ใช้สิทธิการใช้โปรแกรมวันอังคาร.docx')
         
         # 6. เรนเดอร์ข้อมูลลงในเทมเพลตและขีดเส้นใต้ส่วนที่ถูกแทนที่
@@ -461,7 +556,7 @@ async def generate_contract(
         return JSONResponse(content={
             "file_base64": base64.b64encode(file_bytes).decode("ascii"),
             "file_name": f"สัญญา_{quotation_id}.docx",
-            "contract_data": data_from_gemini,
+            "contract_data": data_from_qwen,
         })
         
     except Exception as e:
