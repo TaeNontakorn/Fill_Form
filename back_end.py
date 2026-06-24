@@ -339,51 +339,66 @@ def analyze_with_qwen(parsed_json):
 
     "Contract_id" : สัญญาเลขที่
     "Contract_date" : วันที่ทำสัญญา
-    "Customer_company_name" : ชื่อบริษัทลูกค้า (ผู้รับอนุญาต)
-    "Customer_tax_id" : เลขทะเบียนนิติบุคคลของบริษัทลูกค้า
-    "Customer_director_name" : ชื่อกรรมการบริษัท หรือผู้รับมอบอำนาจของบริษัทลูกค้า
-    "Customer_address" : ที่ตั้งสำนักงานของบริษัทลูกค้า
-    "Standard_module_count" : จำนวน Module มาตรฐานที่ได้รับสิทธิในการใช้งานโดยที่ไม่ต้องซื้อเพิ่ม เช่น "Mango Anywhere Standard Software 13 Modules" จะได้ค่าเป็น 13 เป็นต้น
-    "Standard_module_name" : ชื่อแพ็กเกจหรือประเภทสำหรับ Module มาตรฐาน
-    "Standard_users_count" : จำนวนผู้ใช้งานเบื้องต้นสำหรับระบบมาตรฐานที่แถมให้กับโปรแกรมไม่ต้องซื้อเพิ่ม
+    "Licensee_directors" : รายชื่อกรรมการผู้มีอำนาจลงนามฝั่งผู้รับอนุญาต (ลูกค้า)
+    "Licensee_company_name" : ชื่อบริษัทลูกค้า (ผู้รับอนุญาต)
+    "Licensee_tax_id" : เลขทะเบียนนิติบุคคลของบริษัทลูกค้า
+    "Licensee_authorized_person" : ชื่อกรรมการบริษัท หรือผู้รับมอบอำนาจของบริษัทลูกค้า
+    "Licensee_address" : ที่ตั้งสำนักงานของบริษัทลูกค้า
 
-    "License_fee" : จำนวนเงินค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุทั้งตัวเลขและตัวหนังสือ
-    "License_fee_month" : ค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุเป็นตัวเลข
-    "License_fee_year" : ค่าสิทธิการใช้โปรแกรม (License fee) รายปี ระบุทั้งตัวเลขและตัวหนังสือ
-    "Cloud_usage_description" : รายละเอียดการใช้งานระบบ Cloud
-    "Concurrent_users" : จำนวนผู้ใช้งานพร้อมกัน (Concurrent Users) ที่รวมมากับโปรแกรม
-    "Additional_concurrent_users" : จำนวนผู้ใช้งานพร้อมกันแบบซื้อเพิ่มเติมจากโปรแกรมที่มีมาให้เช่น "Add 5 Concurrent Users (Free of charge)  5 คน แบบที่แถมให้แต่จะมีการบอกไว้ว่า "รวม User ที่สามารถเข้าใช้งานโปรแกรมได้ทั้งหมด 10 Users (Concurrent user)" แสดงว่าจะมีการซื้อเพิ่มเติม จะได้เป็น 5 เป็นต้น
-    "Add_concurrent_rate_price" : ราคาค่าบริการ Add Concurrent Users ระบุทั้งตัวเลขและตัวหนังสือ
-    "Add_multi_company_count" : จำนวนบริษัทในเครือ (Add Multi Company) ที่ต้องการเพิ่มนอกจากตัวของบริษัทลูกค้าเอง เช่น "Add Multi Company 2 บริษัท" จะได้ค่าเป็น 2 เป็นต้น
-    "Add_multi_rate_price" : ราคาค่าบริการ Add Multi Company ระบุทั้งตัวเลขและตัวหนังสือ
-    "Optional_module_count" : จำนวนระบบโมดูลเสริม (Optional Modules) ที่เลือกใช้งานเพิ่มเติมนอกจาก Module มาตรฐาน เช่น "Project Management & QCM , CSM " เป็นต้น จะถือว่าเป็นการซื้อโมดูลเสริมจำนวน 2 Module เสริม เป็นต้น
-    "Optional_module_details" : รายชื่อระบบโมดูลเสริม พร้อมระบุราคาต่อเดือนเป็นตัวเลขและตัวหนังสือ
+    "Software_product_name" : ชื่อโปรแกรม (เช่น Mango Anywhere Software หรือ Mango Project Management “PPN”)
+    "Standard_modules_total" : จำนวน Module มาตรฐานที่ได้รับสิทธิที่มาพร้อมโปรแกรม
+    "Total_users_count" : จำนวนผู้ใช้งานทั้งหมด (รวมทั้งผู้ใช้งานมาตรฐานและผู้ใช้งานเพิ่มเติม)
+    "Total_multi_company_count" : จำนวนบริษัทในเครือทั้งหมด (รวมทั้งบริษัทมาตรฐานและบริษัทเพิ่มเติม)
+    "Total_optional_modules_count" : จำนวนระบบโมดูลเสริมทั้งหมด (รวมทั้งโมดูลมาตรฐานและโมดูลเพิ่มเติม)
+    "License_fee_month_price" : ค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุเป็นตัวเลข
+    "License_fee_month_text" : ค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ตัวหนังสือ
+    "License_fee_year_price" : ค่าสิทธิการใช้โปรแกรม (License fee) รายปี ระบุเป็นตัวเลข
+    "License_fee_year_text" : ค่าสิทธิการใช้โปรแกรม (License fee) รายปี ตัวหนังสือ
+
+    "Optional_modules_count" : จำนวนระบบโมดูลเสริม (Optional Modules) ที่ลูกค้าซื้อเพิ่มใช้งานเพิ่มเติม
+    "Optional_modules_rows_1" : รายชื่อระบบโมดูลเสริม พร้อมระบุราคาต่อเดือนเป็นตัวเลขและตัวหนังสือ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
+    "Optional_modules_month_rows_1" : ราคาต่อเดือนของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
+    "Optional_modules_year_rows_1" : ราคาต่อปีของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
+    "Optional_modules_rows_2" : รายชื่อระบบโมดูลเสริม พร้อมระบุราคาต่อเดือนเป็นตัวเลขและตัวหนังสือ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
+    "Optional_modules_month_rows_2" : ราคาต่อเดือนของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
+    "Optional_modules_year_rows_2" : ราคาต่อปีของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
+    "Optional_modules_rows_3" : รายชื่อระบบโมดูลเสริม พร้อมระบุราคาต่อเดือนเป็นตัวเลขและตัวหนังสือ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
+    "Optional_modules_month_rows_3" : ราคาต่อเดือนของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
+    "Optional_modules_year_rows_3" : ราคาต่อปีของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
+    "Free_user_count" : จำนวนผู้ใช้งานแบบไม่เสียค่าใช้จ่าย (Free Users) ที่มาพร้อมโปรแกรม
+    "Add_concurrent" : จำนวนผู้ใช้งานพร้อมกันแบบซื้อเพิ่มเติม (Add Concurrent Users)
+    "Add_concurrent_rate_price" : อัตราค่าบริการรายเดือน/รายปี ของผู้ใช้งานที่ซื้อเพิ่ม
+    "Add_concurrent_rate_price_text" : อัตราค่าบริการรายเดือน/รายปี ของผู้ใช้งานที่ซื้อเพิ่ม (ตัวหนังสือ)
+    "Add_concurrent_rate_price_after" : อัตราค่าบริการรายเดือน/รายปี ของผู้ใช้งานที่ซื้อเพิ่ม หลังจากรวมกับผู้ใช้งานมาตรฐานแล้ว
+    "Add_concurrent_rate_price_text_after" : อัตราค่าบริการรายเดือน/รายปี ของผู้ใช้งานที่ซื้อเพิ่ม หลังจากรวมกับผู้ใช้งานมาตรฐานแล้ว (ตัวหนังสือ)
+    "Multi_company_count" : จำนวนบริษัทในเครือ (Multi Company) 
+    "Add_multi_rate_price" : อัตราค่าบริการรายเดือน/รายปี ของบริษัทในเครือที่ซื้อเพิ่ม
+
+    "Free_applications_list" : รายชื่อแอปพลิเคชันฟรีที่มาพร้อมโปรแกรม
+    "Paid_applications_list" : รายชื่อแอปพลิเคชันที่ต้องเสียค่าใช้จ่ายเพิ่มเติม
+    "Cloud_usage_space_details" : รายละเอียดการใช้งานระบบ Cloud (เช่น ขนาดพื้นที่, จำนวนฐานข้อมูล, จำนวนเครื่องเสมือน)
+
+    "Deposit_amount" : จำนวนเงินมัดจำประกันการใช้โปรแกรมล่วงหน้า  ระบุทั้งตัวเลข   
+    "Deposit_amount_text" : จำนวนเงินมัดจำประกันการใช้โปรแกรมล่วงหน้า  ระบุเป็นตัวหนังสือ
     "Implement_package_name" : ชื่อแพคเกจสำหรับการวางระบบซอฟต์แวร์ (Implement)
-    "Implement_price" : มูลค่าสัญญางานวางระบบ ระบุทั้งตัวเลขและตัวหนังสือ
-    "Implement_mandays" : จำนวนวันทำงาน (Man-day) สำหรับการวางระบบซอฟต์แวร์ (Implement)
-    "Implement_payment_terms" : เงื่อนไขและงวดการชำระเงินสำหรับค่าวางระบบ โดยต้องระบุคำว่า "ชำระ" ต่อท้ายคำว่า "งวดที่ X" เสมอ (เช่น "งวดที่ 1 ชำระ 30%") รูปแบบที่ต้องการเช่น "งวดที่ 1 ชำระ 30% ชำระเมื่อเริ่มโครงการและแผนดำเนินงาน (Kick Off Project) เป็นจำนวนเงิน 90,000.00 บาท"
-    "Deposit_amount" : จำนวนเงินมัดจำประกันการใช้โปรแกรมล่วงหน้า 2 เดือน ระบุทั้งตัวเลขและตัวหนังสือ
-    "Customize_man_days" : จำนวนวันทำงาน (Man-day) สำหรับการพัฒนาโปรแกรมเพิ่มเติม
-    "Customize_rate_per_day" : อัตราค่าบริการพัฒนาโปรแกรมเพิ่มเติมต่อ 1 วันทำงาน ระบุทั้งตัวเลขและตัวหนังสือ
-    "Support_rate_per_manday" : อัตราค่าบริการ Support ต่อ 1 วันทำงาน (Man-day) ระบุเป็นตัวเลข
-    "Support_rate_per_manday_text" : อัตราค่าบริการ Support ต่อ 1 วันทำงาน (Man-day) ระบุเป็นตัวหนังสือเช่น "หนึ่งหมื่นบาทถ้วน"
-    "Mandays_count" : จำนวนวันทำงาน (Man-day) สำหรับการวางระบบซอฟต์แวร์ (Implement)
-    "Manday_price" : ราคาต่อวันสำหรับการวางระบบซอฟต์แวร์ (Implement)
+    "Implement_price" : มูลค่าสัญญางานวางระบบ ระบุทั้งตัวเลข
+    "Implement_price_text" : มูลค่าสัญญางานวางระบบ ระบุเป็นตัวหนังสือ
+    "Implement_payment_terms" : เงื่อนไขและงวดการชำระเงินสำหรับค่าวางระบบ โดยต้องระบุคำว่า 'ชำระ' ต่อท้าย 'งวดที่ X' เสมอ เช่น 'งวดที่ 1 ชำระ 30%...'
+    "Implement_mandays" : กำหนดระยะเวลาการดำเนินงานในการวางระบบซอฟต์แวร์ (Implement) ระบุเป็น
+    "Support_rate_per_manday" : อัตราค่าบริการสนับสนุนหรืออบรมเพิ่มเติมต่อครั้ง (ตัวเลข)
+    "Support_rate_per_manday_text" : อัตราค่าบริการสนับสนุนหรืออบรมเพิ่มเติมต่อครั้ง (ตัวหนังสือ)
+
+
     "Quotation_id" : เลขที่ใบเสนอราคาที่นำมาอ้างอิงเป็นเอกสารแนบท้าย
     "Quotation_date" : วันที่ของใบเสนอราคา
-    "Customer_company_signature_name" : ชื่อบริษัทลูกค้าสำหรับประทับตราในหน้าลงนาม
-    "Customer_authorized_signature" : ลายมือชื่อและชื่อตัวบรรจงของผู้มีอำนาจลงนามฝ่ายลูกค้า
-    "Customer_position" : ตำแหน่งของผู้มีอำนาจลงนามฝ่ายลูกค้า
-    "Customer_email" : อีเมลของผู้มีอำนาจลงนามฝ่ายลูกค้า
-    "Customer_witness_signature" : ลายมือชื่อพยานฝ่ายลูกค้า
-    "Customer_witness_email" : อีเมลของพยานฝ่ายลูกค้า
+    "Subsidiaries_attachment_status" : สถานะเอกสารแนบท้ายสำหรับบริษัทในเครือ (มี/ไม่มี)
 
     ตัวอย่างรูปแบบ JSON ที่ต้องการ:
     {{
         "Contract_id": "123456789",
         "Contract_date": "1 มกราคม 2567",
-        "Customer_company_name": "บริษัท มังโก จำกัด",
-        "Customer_tax_id": "ไม่พบข้อมูล"
+        "Licensee_company_name": "บริษัท แมงโก้ จำกัด",
+        "Licensee_tax_id": "ไม่พบข้อมูล"
     }}
     """
     
@@ -702,7 +717,7 @@ async def generate_contract(
         
         # 5. ใส่สัญลักษณ์ ★ เพื่อเตรียมขีดเส้นใต้ และเปิดเทมเพลต Word
         wrapped_data = wrap_values(data_from_qwen)
-        doc = DocxTemplate('1.สัญญาอนุญาตให้ใช้สิทธิการใช้โปรแกรมวันอังคาร.docx')
+        doc = DocxTemplate('template_สัญญาเช่า.docx')
         
         # 6. เรนเดอร์ข้อมูลลงในเทมเพลตและขีดเส้นใต้ส่วนที่ถูกแทนที่
         doc.render(wrapped_data)
@@ -718,6 +733,7 @@ async def generate_contract(
         # ลบไฟล์ชั่วคราวทั้งหมดทันทีหลังอ่านเสร็จแล้ว
         cleanup_temp_files(output_docx_path)
 
+        print(f"[DEBUG] base_url={QWEN_API_BASE_URL}")
         # แปลงไฟล์ docx เป็น base64 เพื่อส่งผ่าน JSON ได้โดยไม่มีปัญหาขนาด header
         return JSONResponse(content={
             "file_base64": base64.b64encode(file_bytes).decode("ascii"),
