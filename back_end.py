@@ -14,7 +14,9 @@ import uuid
 import shutil
 from dotenv import load_dotenv
 from copy import deepcopy
-from docxtpl import DocxTemplate
+from docxtpl import DocxTemplate, RichText
+
+
 from docx.oxml import OxmlElement
 from pydantic import BaseModel
 from typing import List, Optional
@@ -334,7 +336,7 @@ def analyze_with_qwen(parsed_json):
     
     [กฎข้อบังคับที่ต้องทำตามอย่างเคร่งครัด]
     1. ห้ามมีข้อความเกริ่นนำ ข้อความสรุป หรือคำอธิบายใดๆ ทั้งสิ้น ให้ตอบกลับมาแค่โครงสร้างปีกกา {{...}} ของ JSON เท่านั้น
-    2. หากหัวข้อไหน "ไม่พบข้อมูล" ในเอกสาร ให้ใส่ค่าเป็น "ไม่พบข้อมูล" (ห้ามแต่งเติมหรือเดาข้อมูลเองเด็ดขาด)
+    2. หากหัวข้อไหน ไม่พบข้อมูลในเอกสาร ให้ใส่ค่าเป็น string "ไม่พบข้อมูล" เท่านั้น ห้ามใส่ค่าว่าง "", ห้ามใส่ null, ห้ามข้ามฟิลด์นั้น
     3. ใช้ชื่อ Key ตามที่ระบุด้านล่างนี้เป๊ะๆ:
 
     "Contract_id" : สัญญาเลขที่
@@ -348,50 +350,51 @@ def analyze_with_qwen(parsed_json):
     "Software_product_name" : ชื่อโปรแกรม (เช่น Mango Anywhere Software หรือ Mango Project Management “PPN”)
     "Standard_modules_total" : จำนวน Module มาตรฐานที่ได้รับสิทธิที่มาพร้อมโปรแกรม
     "Total_users_count" : จำนวนผู้ใช้งานทั้งหมด (รวมทั้งผู้ใช้งานมาตรฐานและผู้ใช้งานเพิ่มเติม)
-    "Total_multi_company_count" : จำนวนบริษัทในเครือทั้งหมด (รวมทั้งบริษัทมาตรฐานและบริษัทเพิ่มเติม)
+    "Total_multi_company_count" : จำนวนบริษัทในเครือทั้งหมด (รวมทั้งบริษัทมาตรฐานและบริษัทเพิ่มเติม) ถ้าไม่มีบริษัทในเครือให้ใส่ค่าเป็น 0 เท่านั้น
     "Total_optional_modules_count" : จำนวนระบบโมดูลเสริมทั้งหมด (รวมทั้งโมดูลมาตรฐานและโมดูลเพิ่มเติม)
-    "License_fee_month_price" : ค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุเป็นตัวเลข
-    "License_fee_month_text" : ค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ตัวหนังสือ
-    "License_fee_year_price" : ค่าสิทธิการใช้โปรแกรม (License fee) รายปี ระบุเป็นตัวเลข
-    "License_fee_year_text" : ค่าสิทธิการใช้โปรแกรม (License fee) รายปี ตัวหนังสือ
+    "License_fee_month_price" : ค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ระบุเป็นตัวเลขเท่านั้นเช่น 30,000 เท่านั้น
+    "License_fee_month_text" : ค่าสิทธิการใช้โปรแกรม (License fee) รายเดือน ตัวหนังสือเช่น "สามหมื่นบาทถ้วน" เท่านั้น
+    "License_fee_year_price" : ค่าสิทธิการใช้โปรแกรม (License fee) รายปี ระบุเป็นตัวเลข เช่น 360,000 เท่านั้น
+    "License_fee_year_text" : ค่าสิทธิการใช้โปรแกรม (License fee) รายปี ตัวหนังสือเช่น "สามแสนหกหมื่นบาทถ้วน" เท่านั้น
 
     "Optional_modules_count" : จำนวนระบบโมดูลเสริม (Optional Modules) ที่ลูกค้าซื้อเพิ่มใช้งานเพิ่มเติม
-    "Optional_modules_rows_1" : รายชื่อระบบโมดูลเสริม พร้อมระบุราคาต่อเดือนเป็นตัวเลขและตัวหนังสือ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
-    "Optional_modules_month_rows_1" : ราคาต่อเดือนของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
-    "Optional_modules_year_rows_1" : ราคาต่อปีของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
-    "Optional_modules_rows_2" : รายชื่อระบบโมดูลเสริม พร้อมระบุราคาต่อเดือนเป็นตัวเลขและตัวหนังสือ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
-    "Optional_modules_month_rows_2" : ราคาต่อเดือนของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
-    "Optional_modules_year_rows_2" : ราคาต่อปีของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
-    "Optional_modules_rows_3" : รายชื่อระบบโมดูลเสริม พร้อมระบุราคาต่อเดือนเป็นตัวเลขและตัวหนังสือ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
-    "Optional_modules_month_rows_3" : ราคาต่อเดือนของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
-    "Optional_modules_year_rows_3" : ราคาต่อปีของโมดูลเสริมแต่ละรายการ (ถ้ามีหลายรายการให้รวมเป็นข้อความเดียว)
+    "Optional_modules_rows_1" : รายชื่อระบบโมดูลเสริมที่ลูกค้าได้ซื้อเพิ่มเติม
+    "Optional_month_rows_1" : ราคาต่อเดือนของโมดูลเสริมที่ได้เลือกไว้ใน Optional_modules_rows_1 โดยระบุเป็นตัวเลขเท่านั้น
+    "Optional_year_rows_1" : ราคาต่อปีของโมดูลเสริมที่ได้เลือกไว้ใน Optional_modules_rows_1 โดยระบุเป็นตัวเลขเท่านั้น
+    "Optional_modules_rows_2" : รายชื่อระบบโมดูลเสริมที่ลูกค้าได้ซื้อเพิ่มเติม
+    "Optional_month_rows_2" : ราคาต่อเดือนของโมดูลเสริมที่ได้เลือกไว้ใน Optional_modules_rows_2 โดยระบุเป็นตัวเลขเท่านั้น
+    "Optional_year_rows_2" : ราคาต่อปีของโมดูลเสริมที่ได้เลือกไว้ใน Optional_modules_rows_2 โดยระบุเป็นตัวเลขเท่านั้น
+    "Optional_modules_rows_3" : รายชื่อระบบโมดูลเสริมที่ลูกค้าได้ซื้อเพิ่มเติม  
+    "Optional_month_rows_3" : ราคาต่อเดือนของโมดูลเสริมที่ได้เลือกไว้ใน Optional_modules_rows_3 โดยระบุเป็นตัวเลขเท่านั้น
+    "Optional_year_rows_3" : ราคาต่อปีของโมดูลเสริมที่ได้เลือกไว้ใน Optional_modules_rows_3 โดยระบุเป็นตัวเลขเท่านั้น
+
     "Free_user_count" : จำนวนผู้ใช้งานแบบไม่เสียค่าใช้จ่าย (Free Users) ที่มาพร้อมโปรแกรม
     "Add_concurrent" : จำนวนผู้ใช้งานพร้อมกันแบบซื้อเพิ่มเติม (Add Concurrent Users)
-    "Add_concurrent_rate_price" : อัตราค่าบริการรายเดือน/รายปี ของผู้ใช้งานที่ซื้อเพิ่ม
-    "Add_concurrent_rate_price_text" : อัตราค่าบริการรายเดือน/รายปี ของผู้ใช้งานที่ซื้อเพิ่ม (ตัวหนังสือ)
-    "Add_concurrent_rate_price_after" : อัตราค่าบริการรายเดือน/รายปี ของผู้ใช้งานที่ซื้อเพิ่ม หลังจากรวมกับผู้ใช้งานมาตรฐานแล้ว
-    "Add_concurrent_rate_price_text_after" : อัตราค่าบริการรายเดือน/รายปี ของผู้ใช้งานที่ซื้อเพิ่ม หลังจากรวมกับผู้ใช้งานมาตรฐานแล้ว (ตัวหนังสือ)
+    "Add_concurrent_rate_price_month" : อัตราค่าบริการรายเดือน ของผู้ใช้งานที่ซื้อเพิ่มตัวเลขเท่านั้น
+    "Add_concurrent_rate_price_year" : อัตราค่าบริการรายปี ของผู้ใช้งานที่ซื้อเพิ่มตัวเลขเท่านั้น
+    "Add_concurrent_rate_price_after" : อัตราค่าบริการรายเดือน ของผู้ใช้งานที่ซื้อเพิ่ม หลังจากรวมกับผู้ใช้งานมาตรฐานแล้ว
+    "Add_concurrent_rate_price_text_after" : อัตราค่าบริการรายเดือน ของผู้ใช้งานที่ซื้อเพิ่ม หลังจากรวมกับผู้ใช้งานมาตรฐานแล้ว (ตัวหนังสือ)
     "Multi_company_count" : จำนวนบริษัทในเครือ (Multi Company) 
     "Add_multi_rate_price" : อัตราค่าบริการรายเดือน/รายปี ของบริษัทในเครือที่ซื้อเพิ่ม
 
     "Free_applications_list" : รายชื่อแอปพลิเคชันฟรีที่มาพร้อมโปรแกรม
     "Paid_applications_list" : รายชื่อแอปพลิเคชันที่ต้องเสียค่าใช้จ่ายเพิ่มเติม
-    "Cloud_usage_space_details" : รายละเอียดการใช้งานระบบ Cloud (เช่น ขนาดพื้นที่, จำนวนฐานข้อมูล, จำนวนเครื่องเสมือน)
+    "Cloud_usage_space_details" : รายละเอียดการใช้งานระบบหลังจากที่ kick off แล้ว เช่น ขนาดพื้นที่จัดเก็บข้อมูล, จำนวนผู้ใช้งานพร้อมกัน, การสำรองข้อมูล, การเข้ารหัสข้อมูล, การเข้าถึงจากอุปกรณ์ต่างๆ เป็นต้น
 
     "Deposit_amount" : จำนวนเงินมัดจำประกันการใช้โปรแกรมล่วงหน้า  ระบุทั้งตัวเลข   
     "Deposit_amount_text" : จำนวนเงินมัดจำประกันการใช้โปรแกรมล่วงหน้า  ระบุเป็นตัวหนังสือ
     "Implement_package_name" : ชื่อแพคเกจสำหรับการวางระบบซอฟต์แวร์ (Implement)
     "Implement_price" : มูลค่าสัญญางานวางระบบ ระบุทั้งตัวเลข
     "Implement_price_text" : มูลค่าสัญญางานวางระบบ ระบุเป็นตัวหนังสือ
-    "Implement_payment_terms" : เงื่อนไขและงวดการชำระเงินสำหรับค่าวางระบบ โดยต้องระบุคำว่า 'ชำระ' ต่อท้าย 'งวดที่ X' เสมอ เช่น 'งวดที่ 1 ชำระ 30%...'
+    "Implement_payment_terms" : เงื่อนไขและงวดการชำระเงินสำหรับค่าวางระบบ โดยต้องระบุคำว่า 'ชำระ' ต่อท้าย 'งวดที่ X' เสมอ เช่น 'งวดที่ 1 ชำระ 30% เมื่อ....'
     "Implement_mandays" : กำหนดระยะเวลาการดำเนินงานในการวางระบบซอฟต์แวร์ (Implement) ระบุเป็น
-    "Support_rate_per_manday" : อัตราค่าบริการสนับสนุนหรืออบรมเพิ่มเติมต่อครั้ง (ตัวเลข)
-    "Support_rate_per_manday_text" : อัตราค่าบริการสนับสนุนหรืออบรมเพิ่มเติมต่อครั้ง (ตัวหนังสือ)
+    "Support_rate_per_manday" : อัตราค่าบริการสนับสนุนหรืออบรมเพิ่มเติมต่อครั้งตัวเลข (เช่น 14,000)
+    "Support_rate_per_manday_text" : อัตราค่าบริการสนับสนุนหรืออบรมเพิ่มเติมต่อครั้งตัววหนังสือ เช่น หนึ่งหมื่นสี่พันบาทถ้วน
 
 
     "Quotation_id" : เลขที่ใบเสนอราคาที่นำมาอ้างอิงเป็นเอกสารแนบท้าย
-    "Quotation_date" : วันที่ของใบเสนอราคา
-    "Subsidiaries_attachment_status" : สถานะเอกสารแนบท้ายสำหรับบริษัทในเครือ (มี/ไม่มี)
+    "Quotation_date" : วันที่ของใบเสนอราคาต้องเป็นในรู)เดือนนี้เท่านั้นเช่น 1 มกราคม 2567
+    "Subsidiaries_attachment_status" : สถานะเอกสารแนบท้ายสำหรับบริษัทในเครือถ้ามีการบอกว่ามีบริษัทในเครือให้ใส่ค่าเป็น "มีเอกสารแนบท้าย" ถ้าไม่มีบริษัทในเครือให้ใส่ค่าเป็น "ไม่มีเอกสารแนบท้าย"
 
     ตัวอย่างรูปแบบ JSON ที่ต้องการ:
     {{
@@ -445,6 +448,12 @@ def analyze_with_qwen(parsed_json):
 # =================================================================
 _MARKER = '\u2063'  # INVISIBLE SEPARATOR (ไม่ปรากฏในเอกสาร Word)
 
+
+# =================================================================
+# Helper: ใส่ตัวนำทาง (invisible marker) ให้กับข้อมูลเพื่อชี้เป้าสำหรับการขีดเส้นใต้
+# =================================================================
+_MARKER = '\u2063'  # INVISIBLE SEPARATOR (ไม่ปรากฏในเอกสาร Word)
+
 def wrap_values(data):
     if isinstance(data, dict):
         return {k: wrap_values(v) for k, v in data.items()}
@@ -454,8 +463,8 @@ def wrap_values(data):
         # ไม่ขีดเส้นใต้สตริงว่าง แต่ให้ขีดเส้นใต้ "ไม่พบข้อมูล"
         if not data.strip():
             return data
-        
-        # ลบอักขระส่วนเกินที่ขอบ (เช่น เครื่องหมายจุลภาค, คำพูด) ออกไปให้ข้อความ "โล้นๆ" ตามที่ต้องการ
+
+        # ลบอักขระส่วนเกินที่ขอบ (เช่น เครื่่องหมายจุลภาค, คำพูด) ออกไปให้ข้อความ "โล้นๆ" ตามที่ต้องการ
         cleaned_data = data.strip(' \t\n\r\'",')
         return f"{_MARKER}{cleaned_data}{_MARKER}"
     elif data is None:
@@ -465,8 +474,25 @@ def wrap_values(data):
         value_str = str(data)
         if not value_str.strip():
             return value_str
-        cleaned_data = value_str.strip(' \t\n\r\'\",')
+        cleaned_data = value_str.strip(' \t\n\r\'",')
         return f"{_MARKER}{cleaned_data}{_MARKER}"
+
+
+
+def wrap_values_richtext(data):
+    if isinstance(data, dict):
+        return {k: wrap_values_richtext(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [wrap_values_richtext(item) for item in data]
+    elif isinstance(data, str) and data.strip():
+        rt = RichText()
+        rt.add(data, color='FF0000', underline=True, font='TH SarabunPSK', size=28)
+        return rt
+    elif data is not None:
+        rt = RichText()
+        rt.add(data, color='FF0000', underline=True, font='TH SarabunPSK', size=28)
+        return rt
+    return data
 
 
 # Helper: แยก run ที่มี ★ ออกเป็นหลาย run → ใส่สีแดง+ขีดเส้นใต้เฉพาะส่วนที่ fill
@@ -716,7 +742,7 @@ async def generate_contract(
             )
         
         # 5. ใส่สัญลักษณ์ ★ เพื่อเตรียมขีดเส้นใต้ และเปิดเทมเพลต Word
-        wrapped_data = wrap_values(data_from_qwen)
+        wrapped_data = wrap_values_richtext(data_from_qwen)
         doc = DocxTemplate('template_สัญญาเช่า.docx')
         
         # 6. เรนเดอร์ข้อมูลลงในเทมเพลตและขีดเส้นใต้ส่วนที่ถูกแทนที่
