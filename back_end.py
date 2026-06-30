@@ -4,7 +4,7 @@ import json
 import base64
 from datetime import datetime
 import requests as http_requests
-from openai import OpenAI
+from google import genai
 from pydantic import BaseModel, Field
 import sys
 import uuid
@@ -25,15 +25,10 @@ from pythainlp.util import bahttext  # pip install pythainlp
 sys.stdout.reconfigure(encoding='utf-8')
 load_dotenv()
 
-# ตั้งค่าโมเดล Qwen
-QWEN_API_KEY = os.environ.get("QWEN_API_KEY")
-QWEN_API_BASE_URL = os.environ.get("QWEN_API_BASE_URL")
-client = OpenAI(
-    base_url=QWEN_API_BASE_URL,
-    api_key=QWEN_API_KEY
-)
-print(f"[DEBUG] QWEN_API_KEY loaded: {bool(QWEN_API_KEY)}")
-print(f"[DEBUG] QWEN_API_BASE_URL: {QWEN_API_BASE_URL}")
+# ตั้งค่าโมเดล Gemini
+GEMINI_API_KEY = os.environ.get("API_KEY") or os.environ.get("GEMINI_API_KEY")
+client = genai.Client(api_key=GEMINI_API_KEY)
+print(f"[DEBUG] GEMINI_API_KEY loaded: {bool(GEMINI_API_KEY)}")
 
 # =================================================================
 # การตั้งค่า External Authentication API
@@ -202,9 +197,9 @@ def filter_and_clean_quotation(raw_json: dict) -> CleanQuotationData:
     )
 
 # =================================================================
-# ฟังก์ชันสกัดข้อมูลจากเอกสารด้วย Qwen
+# ฟังก์ชันสกัดข้อมูลจากเอกสารด้วย Gemini
 # =================================================================
-def analyze_with_qwen(parsed_json):
+def analyze_with_gemini(parsed_json):
     if isinstance(parsed_json, BaseModel):
         try:
             model_data = parsed_json.model_dump()
@@ -269,7 +264,7 @@ def analyze_with_qwen(parsed_json):
 
     ── จำนวนผู้ใช้งานและบริษัทในเครือ ──────────────────────────────────
 
-    "User_with_program"               : จำนวนผู้ใช้งานที่มาพร้อมโปรแกรม (Standard Users) ตัวเลขเท่านั้นแต่ถ้าไม่มีให้ใส่ว่า ไม่มี
+    "User_with_program"               : จำนวนผู้ใช้งานที่มาพร้อมโปรแกรม (Standard Users) ตัวเลขเท่านั้นแต่ถ้าไม่มีให้ใส่ตัวเลข 0
     "Free_user_count"                 : จำนวนผู้ใช้งานแบบฟรี (Free Users) **แยกเป็นต้วเลขเท่านั้น** ต้องมีคำว่า Free of charge เท่านั้น
     *** หมายเหตุ: หากเอกสารเขียนรวมกน เช่น "Total 50 Users (Includes 5 Free)" หรือ "Standard 45 + Free 5"
        ให้แยกเป็ฯ User_with_program=45 และ Free_user_count=5 โดยตรง ห้ามส่งค่ารวมกน ***
@@ -286,7 +281,7 @@ def analyze_with_qwen(parsed_json):
     Free_list: "การอนุมัติเอกสาร (Document Approval)", "การรับของ (PO Received)", "การตรวจนับทรัพย์สิน (Count Asset)", "การแจ้งเตือน (Notification)", "การจัดทำเอกสารเบิก โอน จ่ายวัสดุ (Mango ICM)", "อัปเดตความก้าวหน้าของงาน (Update Progress)", "ระบบตรวจงาน (Mango QCM)"
 
     [ถังแอปมีค่าใช้จ่าย — ถ้าเจอชื่อแอปในเอกสารให้ match กับรายการนี้แล้วคัดลอกชื่อมาตรงๆ]
-    Pay_list: "การบันทึกเอกสารเบิกเงินสดย่อย (Mango Petty Cash)", "การบันทึกเอกสารขอซื้อ ขอจ้าง (Mango PR)", "การรับวางบิลผู้รับเหมา (Mango Billing)", "สรุปภาพรวมของทุกโครงการ (Mango PM)"
+    Pay_list: " Realty Quick (ขาย/ออกใบเสนอราคา)","การบันทึกเอกสารเบิกเงินสดย่อย (Mango Petty Cash)", "การบันทึกเอกสารขอซื้อ ขอจ้าง (Mango PR)", "การรับวางบิลผู้รับเหมา (Mango Billing)", "สรุปภาพรวมของทุกโครงการ (Mango PM)"
 
     "Free_applications_list"    : รายชื่อแอปฟรีที่ลูกค้าได้รับ ให้ดึงจากถัง Free_list ตามที่ปรากฏในเอกสาร ต้องเป็น string คั่นด้วย \n เช่น "การอนุมัติเอกสาร (Document Approval)\nการรับของ (PO Received)"
     "Paid_applications_list"    : รายชื่อแอปมีค่าใช้จ่ายที่ลูกค้าซื้อเพิ่ม ให้ดึงจากถัง Pay_list ตามที่ปรากฏในเอกสาร ต้องเป็น string คั่นด้วย \n
@@ -348,32 +343,19 @@ def analyze_with_qwen(parsed_json):
     }}
     """
 
-    response = client.chat.completions.create(
-        model="qwen3.6-35b-a3b",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.1
+    response = client.models.generate_content(
+        model="gemini-3.5-flash",
+        contents=[prompt],
+        config={
+            "response_mime_type": "application/json",
+            "temperature": 0.0,
+        }
     )
-    print(f"[DEBUG] Qwen API response received, choices={len(response.choices)}")
-    choice = response.choices[0]
-
-    raw_response = None
-    if hasattr(choice, 'message'):
-        message_obj = choice.message
-        if isinstance(message_obj, dict):
-            raw_response = message_obj.get('content') or message_obj.get('reasoning')
-        else:
-            raw_response = getattr(message_obj, 'content', None) or getattr(message_obj, 'reasoning', None)
-    elif isinstance(choice, dict):
-        raw_response = choice.get('message', {}).get('content') or choice.get('message', {}).get('reasoning')
-
-    if raw_response is None and hasattr(choice, 'reasoning'):
-        raw_response = choice.reasoning
+    raw_response = response.text
+    print(f"[DEBUG] Gemini API response received, len={len(raw_response) if raw_response else 0}")
 
     if raw_response is None:
-        raise HTTPException(status_code=500, detail="Qwen returned no message content.")
-
-    if isinstance(raw_response, bytes):
-        raw_response = raw_response.decode('utf-8', errors='ignore')
+        raise HTTPException(status_code=500, detail="Gemini returned no content.")
 
     clean_json = extract_json_from_qwen_response(raw_response)
     return clean_json
@@ -490,7 +472,7 @@ async def login(credentials: LoginRequest):
                 "userid": credentials.userid,
                 "userpass": credentials.userpass,
             },
-            timeout=30,
+            timeout=300,
         )
         if response.status_code == 200:
             result = response.json()
@@ -522,7 +504,7 @@ async def verify_token(authorization: str = Header(None)):
         response = http_requests.get(
             EXTERNAL_AUTH_VERIFY_URL,
             headers={"X-Mango-Auth": token},
-            timeout=15,
+            timeout=150,
         )
         if response.status_code == 200:
             return response.json()
@@ -543,7 +525,7 @@ async def get_quotation(quotation_id: str, authorization: str = Header(None)):
             EXTERNAL_QUOTATION_URL,
             params={"docno": quotation_id},
             headers={"X-Mango-Auth": token},
-            timeout=30,
+            timeout=300,
         )
         if response_quotation.status_code == 200:
             return response_quotation.json()
@@ -573,12 +555,12 @@ async def generate_contract(
         cleaned_data = filter_and_clean_quotation(parsed_json)
         print(f"[✅ สำเร็จ] กำลังสร้างสัญญาจากใบเสนอราคา: {quotation_id}")
 
-        # 2. ส่งให้ Qwen สกัดข้อมูล
-        qwen_analysis = analyze_with_qwen(cleaned_data)
+        # 2. ส่งให้ Gemini สกัดข้อมูล
+        gemini_analysis = analyze_with_gemini(cleaned_data)
 
         # 3. Parse JSON — ไม่ validate ผ่าน Pydantic เพราะ Key เป็น dynamic
         try:
-            final_data = try_parse_json(qwen_analysis)
+            final_data = try_parse_json(gemini_analysis)
             print(f"[✅ JSON Valid] parse JSON สำเร็จ keys={list(final_data.keys())[:5]}")
         except Exception as e:
             print(f"[❌ JSON Error] {str(e)}")
@@ -617,4 +599,10 @@ async def generate_contract(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("back_end:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run(
+        "back_end:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        reload_excludes=["eval/*", "temp_files/*"],
+    )
