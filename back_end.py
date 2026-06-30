@@ -13,6 +13,7 @@ from docxtpl import DocxTemplate, RichText
 from typing import List, Optional
 import ast
 import re
+from pathlib import Path
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Header
 from fastapi.responses import JSONResponse
@@ -433,6 +434,21 @@ def post_process(data: dict) -> dict:
     return data
 
 # =================================================================
+# Helper: บันทึก final_data ลง eval/predictions/<quotation_id>.json
+# เพื่อใช้เทียบกับ eval/ground_truth/ ทีหลัง (dev accuracy tool)
+# =================================================================
+EVAL_PREDICTIONS_DIR = Path(__file__).resolve().parent / "eval" / "predictions"
+
+def save_eval_prediction(quotation_id: str, data: dict) -> None:
+    try:
+        EVAL_PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
+        path = EVAL_PREDICTIONS_DIR / f"{quotation_id}.json"
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[DEBUG] บันทึก eval prediction ไปที่ {path}")
+    except Exception as e:
+        print(f"[WARN] บันทึก eval prediction ไม่สำเร็จ: {e}")
+
+# =================================================================
 # Helper: แปลงข้อมูลเป็น RichText สีแดง ขีดเส้นใต้
 # =================================================================
 def wrap_values_richtext(data):
@@ -570,6 +586,9 @@ async def generate_contract(
 
         # 4. คำนวณ field ที่ derive (License fee, text versions ฯลฯ)
         final_data = post_process(final_data)
+
+        # 4.5 บันทึก JSON ก่อน render ไปไว้ใน eval/predictions/ สำหรับเทียบ accuracy
+        save_eval_prediction(quotation_id, final_data)
 
         # 5. Wrap เป็น RichText สีแดง ขีดเส้นใต้
         wrapped_data = wrap_values_richtext(final_data)
