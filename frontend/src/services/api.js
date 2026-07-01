@@ -35,10 +35,19 @@ export async function getQuotation(quotationId) {
   return data
 }
 
-export async function generateContract(quotationId, resultQuotation) {
+export async function parseDbd(file) {
+  const form = new FormData()
+  form.append('file', file)
+  // ไม่ต้องตั้ง Content-Type เอง — axios/browser จะ set multipart boundary ให้อัตโนมัติ
+  const { data } = await api.post('/parse-dbd', form)
+  return data
+}
+
+export async function generateContract(quotationId, resultQuotation, dbdData = null) {
   const { data } = await api.post('/generate-contract', {
     quotation_id: quotationId,
     result_quotation: resultQuotation,
+    dbd_data: dbdData,
   })
   return data
 }

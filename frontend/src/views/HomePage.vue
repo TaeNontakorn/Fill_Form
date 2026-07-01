@@ -71,6 +71,29 @@
             <span v-else class="spinner"></span>
           </button>
         </div>
+
+        <!-- DBD Upload -->
+        <div class="dbd-upload-row">
+          <label class="dbd-label" for="dbd-file">
+            &#x1F4C4; แนบหนังสือรับรองบริษัท (DBD) <span class="optional-tag">ไม่บังคับ</span>
+          </label>
+          <div class="dbd-input-wrap">
+            <input
+              id="dbd-file"
+              type="file"
+              accept=".pdf"
+              :disabled="processing"
+              @change="onDbdFileChange"
+              class="dbd-file-input"
+            />
+            <label for="dbd-file" class="dbd-file-display">
+              <span v-if="dbdFile">&#x2705; {{ dbdFile.name }}</span>
+              <span v-else class="placeholder-text">เลือกไฟล์ PDF...</span>
+            </label>
+            <button v-if="dbdFile" class="btn-clear-dbd" @click="dbdFile = null" title="ลบไฟล์">&#x2715;</button>
+          </div>
+          <p v-if="dbdFile" class="dbd-hint">ระบบจะดึง เลขทะเบียน / กรรมการ / ผู้มีอำนาจลงนาม จาก PDF อัตโนมัติ</p>
+        </div>
       </div>
 
       <!-- Status Messages -->
@@ -132,12 +155,13 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { getQuotation, generateContract } from '../services/api'
+import { getQuotation, generateContract, parseDbd } from '../services/api'
 import { auth } from '../stores/auth'
 
 const router = useRouter()
 const sidebarOpen = ref(false)
 const quotationId = ref('')
+const dbdFile = ref(null)
 const processing = ref(false)
 const currentStep = ref(-1)
 const statusMsg = ref('')
@@ -149,9 +173,14 @@ const fileName = ref('')
 
 const progressSteps = [
   'กำลังดึงข้อมูลใบเสนอราคา...',
+  'กำลังอ่านไฟล์ DBD...',
   'AI กำลังสกัดข้อมูลและสร้างสัญญา...',
   'เสร็จสิ้น!',
 ]
+
+function onDbdFileChange(e) {
+  dbdFile.value = e.target.files?.[0] || null
+}
 
 function handleLogout() {
   auth.logout()
@@ -177,8 +206,17 @@ async function handleSubmit() {
     setStatus('ดึงข้อมูลใบเสนอราคาสำเร็จ!')
     currentStep.value = 1
 
-    const result = await generateContract(quotationId.value, quotationData)
+    let dbdData = null
+    if (dbdFile.value) {
+      const dbdResult = await parseDbd(dbdFile.value)
+      dbdData = dbdResult.dbd_data
+      const found = dbdResult.fields_found || []
+      setStatus(`อ่านไฟล์ DBD สำเร็จ (พบ: ${found.join(', ') || 'ไม่พบข้อมูล'})`)
+    }
     currentStep.value = 2
+
+    const result = await generateContract(quotationId.value, quotationData, dbdData)
+    currentStep.value = 3
 
     fileBase64.value = result.file_base64
     fileName.value = result.file_name || `contract_${quotationId.value}.docx`
@@ -457,6 +495,81 @@ function downloadFile() {
 .btn-submit:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* DBD Upload */
+.dbd-upload-row {
+  margin-top: 1rem;
+}
+
+.dbd-label {
+  display: block;
+  font-size: 0.88rem;
+  color: #a1a1aa;
+  margin-bottom: 0.5rem;
+}
+
+.optional-tag {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  margin-left: 0.4rem;
+}
+
+.dbd-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dbd-file-input {
+  display: none;
+}
+
+.dbd-file-display {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+  font-size: 0.88rem;
+  color: #d4d4d8;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dbd-file-display:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.placeholder-text {
+  color: #52525b;
+}
+
+.btn-clear-dbd {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.btn-clear-dbd:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.dbd-hint {
+  font-size: 0.78rem;
+  color: #6ee7b7;
+  margin: 0.4rem 0 0;
 }
 
 /* Status */

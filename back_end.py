@@ -15,9 +15,10 @@ import ast
 import re
 from pathlib import Path
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Header
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Header, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+import pdfplumber
 
 from pythainlp.util import bahttext  # pip install pythainlp
 
@@ -54,6 +55,7 @@ class LoginRequest(BaseModel):
 class quotation(BaseModel):
     quotation_id: str
     result_quotation: dict
+    dbd_data: Optional[dict] = None
 
 class CleanItem(BaseModel):
     item_name: str
@@ -197,9 +199,62 @@ def filter_and_clean_quotation(raw_json: dict) -> CleanQuotationData:
     )
 
 # =================================================================
+# Helper: แยกข้อมูลจากไฟล์ DBD PDF ด้วย pdfplumber (structured)
+# =================================================================
+def _clean_text(text: str) -> str:
+    if text is None:
+        return ""
+    return re.sub(r"\s+", " ", text.replace("\n", " ")).strip()
+
+def extract_dbd_profile(file_bytes: bytes) -> dict:
+    raw_rows = []
+    header_text = ""
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for i, page in enumerate(pdf.pages):
+            if i == 0:
+                header_text = page.extract_text() or ""
+            for table in page.extract_tables():
+                raw_rows.extend(table)
+
+    data = {}
+    for row in raw_rows:
+        if len(row) < 2:
+            continue
+        label = _clean_text(row[0]).rstrip(":").strip()
+        value = row[1] if row[1] is not None else ""
+        data[label] = value
+
+    company_name = None
+    m = re.search(r"ข้อมูล\s*\n(.+)", header_text)
+    if m:
+        company_name = _clean_text(m.group(1))
+
+    directors_raw = data.get("กรรมการ", "")
+    directors_list = []
+    for line in directors_raw.split("\n"):
+        line = line.strip().rstrip("/").strip()
+        if not line:
+            continue
+        line = re.sub(r"^\d+\.\s*", "", line)
+        directors_list.append(line)
+
+    return {
+        "company_name": company_name or _clean_text(data.get("ชื่อนิติบุคคล", "")),
+        "registration_number": _clean_text(data.get("เลขทะเบียนนิติบุคคล", "")),
+        "address": _clean_text(data.get("ที่ตั้ง", "")),
+        "directors": directors_list,
+        "signing_authority": _clean_text(data.get("คณะกรรมการลงชื่อผูกพัน", "")).rstrip("/").strip(),
+    }
+
+def parse_dbd_pdf(file_bytes: bytes) -> dict:
+    structured = extract_dbd_profile(file_bytes)
+    print(f"[DBD] company={structured.get('company_name')} | directors={structured.get('directors')} | signing={structured.get('signing_authority')}")
+    return structured
+
+# =================================================================
 # ฟังก์ชันสกัดข้อมูลจากเอกสารด้วย Gemini
 # =================================================================
-def analyze_with_gemini(parsed_json):
+def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
     if isinstance(parsed_json, BaseModel):
         try:
             model_data = parsed_json.model_dump()
@@ -212,9 +267,32 @@ def analyze_with_gemini(parsed_json):
     else:
         document_content = json.dumps(parsed_json, ensure_ascii=False, indent=2)
 
+    dbd_section = ""
+    if dbd_profile:
+        dbd_section = f"""
+    ── ข้อมูลจากหนังสือรับรองบริษัท (DBD) ──────────────────────────────
+    ข้อมูลต่อไปนี้ดึงมาจาก DBD อย่างเป็นทางการ ให้ใช้แทนข้อมูลใบเสนอราคาสำหรับ field Licensee_* ทุกตัว:
+
+    {json.dumps(dbd_profile, ensure_ascii=False, indent=2)}
+
+    วิธีแมป:
+    - "company_name"        -> Licensee_company_name
+    - "registration_number" -> Licensee_tax_id
+    - "address"             -> Licensee_address
+    - Licensee_authorized_person: ให้อ่าน "signing_authority" เป็นหลัก แล้วพิจารณาดังนี้
+        * ถ้า signing_authority ระบุชื่อบุคคลชัดเจน เช่น "นายสมชาย ใจดี ลงลายมือชื่อ..." → ใช้ชื่อนั้นเลย
+        * ถ้า signing_authority บอกจำนวนกรรมการแต่ไม่ระบุชื่อ เช่น "กรรมการหนึ่งคนลงลายมือชื่อ และประทับตราสำคัญของบริษัท" → ให้เลือกชื่อจาก "directors":
+            - "หนึ่งคน" หรือ "คนเดียว" → ชื่อแรกจาก directors
+            - "สองคน" → ชื่อแรกและชื่อที่สองจาก directors เชื่อมด้วย "และ"
+            - จำนวนอื่นๆ → ใช้ชื่อทั้งหมดจาก directors เชื่อมด้วย "และ"
+        * ถ้าไม่มีข้อมูลใน signing_authority และ directors ว่างเปล่า → ใส่ "ไม่พบข้อมูล"
+    ─────────────────────────────────────────────────────────────────────
+"""
+
     prompt = f"""
     นี่คือข้อมูลใบเสนอราคาจากระบบ (JSON Format):
     {document_content}
+    {dbd_section}
 
     หน้าที่ของคุณคือ สกัดข้อมูลจากใบเสนอราคานี้ตามหัวข้อที่กำหนด และต้องตอบกลับมาในรูปแบบ JSON เท่านั้น
 
@@ -237,7 +315,7 @@ def analyze_with_gemini(parsed_json):
     "Licensee_company_name"     : ชื่อบริษัทลูกค้า (ผู้รับอนุญาต)
     "Licensee_tax_id"           : เลขทะเบียนนิติบุคคลของบริษัทลูกค้า
     "Licensee_directors"        : รายชื่อกรรมการผู้มีอำนาจลงนามฝั่งผู้รับอนุญาต
-    "Licensee_authorized_person": ชื่อกรรมการบริษัท หรือผู้รับมอบอำนาจของบริษัทลูกค้า
+    "Licensee_authorized_person": ชื่อกรรมการบริษัท หรือผู้รับมอบอำนาจของบริษัทลูกค้า 
     "Licensee_address"          : ที่ตั้งสำนักงานของบริษัทลูกค้า
 
     ── ค่าสิทธิ์การใช้โปรแกรม (License fee) ───────────────────────────
@@ -352,6 +430,15 @@ def analyze_with_gemini(parsed_json):
         }
     )
     raw_response = response.text
+    usage = response.usage_metadata
+    cost_usd = (usage.prompt_token_count * 1.5 + usage.candidates_token_count * 9.0) / 1_000_000
+    cost_thb = cost_usd * 35.0
+    print(
+        f"[TOKEN] input={usage.prompt_token_count} | "
+        f"output={usage.candidates_token_count} | "
+        f"total={usage.total_token_count} | "
+        f"cost≈${cost_usd:.6f} ({cost_thb:.4f} THB)"
+    )
     print(f"[DEBUG] Gemini API response received, len={len(raw_response) if raw_response else 0}")
 
     if raw_response is None:
@@ -538,6 +625,24 @@ async def get_quotation(quotation_id: str, authorization: str = Header(None)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการดึงข้อมูล: {str(e)}")
 
+@app.post("/parse-dbd")
+async def parse_dbd_endpoint(
+    file: UploadFile = File(...),
+    authorization: str = Header(None),
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="กรุณาเข้าสู่ระบบก่อนใช้งาน")
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="กรุณาอัปโหลดไฟล์ PDF เท่านั้น")
+    try:
+        file_bytes = await file.read()
+        extracted = parse_dbd_pdf(file_bytes)
+        return JSONResponse(content={"dbd_data": extracted, "fields_found": list(extracted.keys())})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"ไม่สามารถอ่านไฟล์ DBD ได้: {str(e)}")
+
 @app.post("/generate-contract")
 async def generate_contract(
     payload: quotation,
@@ -555,8 +660,8 @@ async def generate_contract(
         cleaned_data = filter_and_clean_quotation(parsed_json)
         print(f"[✅ สำเร็จ] กำลังสร้างสัญญาจากใบเสนอราคา: {quotation_id}")
 
-        # 2. ส่งให้ Gemini สกัดข้อมูล
-        gemini_analysis = analyze_with_gemini(cleaned_data)
+        # 2. ส่งให้ Gemini สกัดข้อมูล (รวม DBD profile ถ้ามี)
+        gemini_analysis = analyze_with_gemini(cleaned_data, dbd_profile=payload.dbd_data)
 
         # 3. Parse JSON — ไม่ validate ผ่าน Pydantic เพราะ Key เป็น dynamic
         try:
@@ -568,6 +673,9 @@ async def generate_contract(
 
         # 4. คำนวณ field ที่ derive (License fee, text versions ฯลฯ)
         final_data = post_process(final_data)
+
+        if payload.dbd_data:
+            print(f"[DBD] ข้อมูล DBD ถูกส่งให้ Gemini วิเคราะห์แล้ว: company={payload.dbd_data.get('company_name')}")
 
         # 4.5 บันทึก JSON ก่อน render ไปไว้ใน eval/predictions/ สำหรับเทียบ accuracy
         save_eval_prediction(quotation_id, final_data)
