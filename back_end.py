@@ -36,16 +36,15 @@ print(f"[DEBUG] GEMINI_API_KEY loaded: {bool(GEMINI_API_KEY)}")
 # =================================================================
 EXTERNAL_AUTH_LOGIN_URL = os.environ.get(
     "EXTERNAL_AUTH_LOGIN_URL",
-    "https://demotokbud.mangoanywhere.com/production.service/api/public/login"
+    "https://service.mangoanywhere.com/api/public/Login"
+    
 )
-EXTERNAL_AUTH_VERIFY_URL = os.environ.get(
-    "EXTERNAL_AUTH_VERIFY_URL",
-    "https://demotokbud.mangoanywhere.com/production.service/Anywhere/BD/QO_ReadData?docno=QO2603TRA001"
-)
+
 MAINCODE = os.environ.get("MAINCODE", "MANGO")
 EXTERNAL_QUOTATION_URL = os.environ.get(
     "EXTERNAL_QUOTATION_URL",
-    "https://demotokbud.mangoanywhere.com/production.service/Anywhere/BD/QO_ReadData"
+    
+    "https://service.mangoanywhere.com/Anywhere/BD/QO_ReadData"
 )
 
 class LoginRequest(BaseModel):
@@ -187,8 +186,16 @@ def filter_and_clean_quotation(raw_json: dict) -> CleanQuotationData:
     tnc_lines = [d.get("remark", "") for d in detail3 if d.get("remark")]
     full_tnc_text = "\n".join(tnc_lines)
 
+    docno = header.get("docno", "")
+    rev = header.get("revno", "")
+
+    if not rev:
+        qu_id = docno  # ถ้าไม่มี rev ให้ใช้ docno อย่างเดียว
+    else:
+        qu_id = f"{docno}.R{rev}"  # สร้างรหัสใบเสนอราคาแบบง่ายๆ
+
     return CleanQuotationData(
-        quotation_id=header.get("docno", ""),
+        quotation_id=qu_id,
         quotation_date=header.get("docdate", ""),
         customer_name=header.get("customer_name", ""),
         customer_address=full_address,
@@ -248,7 +255,14 @@ def extract_dbd_profile(file_bytes: bytes) -> dict:
 
 def parse_dbd_pdf(file_bytes: bytes) -> dict:
     structured = extract_dbd_profile(file_bytes)
-    print(f"[DBD] company={structured.get('company_name')} | directors={structured.get('directors')} | signing={structured.get('signing_authority')}")
+    print("=" * 60)
+    print("[DBD] ===== ข้อมูลที่ดึงจากไฟล์ DBD =====")
+    print(f"  company_name       : {structured.get('company_name')}")
+    print(f"  registration_number: {structured.get('registration_number')}")
+    print(f"  address            : {structured.get('address')}")
+    print(f"  directors          : {structured.get('directors')}")
+    print(f"  signing_authority  : {structured.get('signing_authority')}")
+    print("=" * 60)
     return structured
 
 # =================================================================
@@ -280,12 +294,31 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
     - "registration_number" -> Licensee_tax_id
     - "address"             -> Licensee_address
     - Licensee_authorized_person: ให้อ่าน "signing_authority" เป็นหลัก แล้วพิจารณาดังนี้
-        * ถ้า signing_authority ระบุชื่อบุคคลชัดเจน เช่น "นายสมชาย ใจดี ลงลายมือชื่อ..." → ใช้ชื่อนั้นเลย
-        * ถ้า signing_authority บอกจำนวนกรรมการแต่ไม่ระบุชื่อ เช่น "กรรมการหนึ่งคนลงลายมือชื่อ และประทับตราสำคัญของบริษัท" → ให้เลือกชื่อจาก "directors":
-            - "หนึ่งคน" หรือ "คนเดียว" → ชื่อแรกจาก directors
-            - "สองคน" → ชื่อแรกและชื่อที่สองจาก directors เชื่อมด้วย "และ"
-            - จำนวนอื่นๆ → ใช้ชื่อทั้งหมดจาก directors เชื่อมด้วย "และ"
-        * ถ้าไม่มีข้อมูลใน signing_authority และ directors ว่างเปล่า → ใส่ "ไม่พบข้อมูล"
+
+        [กรณีที่ 1] signing_authority ระบุชื่อบุคคลโดยตรง เช่น "นายสมชาย ใจดี ลงลายมือชื่อ..."
+        → ใช้ชื่อนั้นเลย ไม่ต้องดู directors
+
+        [กรณีที่ 2] signing_authority บอกจำนวนที่ต้องลงนาม แต่ไม่ระบุชื่อ → ดึงชื่อทั้งหมดจาก directors แล้วเชื่อมตามเงื่อนไขนี้:
+
+        หลักการ: นับจำนวนที่ต้องลงนาม (X) จาก signing_authority แล้วเทียบกับจำนวน directors ทั้งหมด (N)
+        - ถ้า X < N (ต้องลงนาม น้อยกว่า จำนวนกรรมการทั้งหมด)
+          → แปลว่า "ใครก็ได้" → เอาชื่อกรรมการ **ทั้งหมด** จาก directors เชื่อมด้วย " หรือ "
+          ตัวอย่าง: X=1, directors=[A, B] → "A หรือ B"
+          ตัวอย่าง: X=2, directors=[A, B, C, D] → "A หรือ B หรือ C หรือ D"
+        - ถ้า X == N (ต้องลงนาม เท่ากับ จำนวนกรรมการทั้งหมด)
+          → แปลว่า "ทุกคนต้องลงนาม" → เอาชื่อกรรมการ **ทั้งหมด** จาก directors เชื่อมด้วย " และ "
+          ตัวอย่าง: X=2, directors=[A, B] → "A และ B"
+        - ถ้า directors มีคนเดียว → ใช้ชื่อนั้นเลย ไม่ต้องเชื่อม
+
+        รูปแบบที่ต้องแปลงเป็น X:
+        "หนึ่งคน" หรือ "คนเดียว" → X=1
+        "สองคน" → X=2, "สามคน" → X=3, "สี่คน" → X=4
+        "หนึ่งในสองคน" → X=1, N=2
+        "สองในสี่คน" → X=2, N=4
+        "สามในห้าคน" → X=3, N=5
+
+        [กรณีที่ 3] signing_authority ว่างหรือไม่มีข้อมูล และ directors ว่างเปล่า
+        → ใส่ "ไม่พบข้อมูล"
     ─────────────────────────────────────────────────────────────────────
 """
 
@@ -301,7 +334,7 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
     2. หากหัวข้อไหนไม่พบข้อมูลในเอกสาร ให้ใส่ค่าเป็น string "ไม่พบข้อมูล" เท่านั้น ห้ามใส่ค่าว่าง "", ห้ามใส่ null, ห้ามข้ามฟิลด์นั้น
     3. ใช้ชื่อ Key ตามที่ระบุด้านล่างนี้เป๊ะๆ ห้ามเปลี่ยนชื่อ Key โดยเด็ดขาด
     4. ห้ามแต่งเติมข้อมูลที่ไม่มีในเอกสารเด็ดขาด
-    5. "unit" และ "quantity" ต้องพิจารณาร่วมกัน: ถ้า quantity=12 และ unit=เดือน ให้คิดว่าเป็น 1 ปี
+    5. "unit" และ "quantity" ต้องพิจารณาร่วมกัน: ถ้า quantity=12 และ unit=month ให้คิดว่าเป็น 1 ปี
     6. Field ราคา "รายเดือน" vs "รายปี" ให้ใส่ "-" (ขีด) เมื่อรูปแบบการชำระนั้นไม่ได้ถูกเลือก เช่น
        - ถ้าลูกค้าซื้อแบบ "รายปี"   → field _month_price / _month_rows_X ทั้งหมดให้ใส่ "-"
        - ถ้าลูกค้าซื้อแบบ "รายเดือน" → field _year_price / _year_rows_X ทั้งหมดให้ใส่ "-"
@@ -383,7 +416,7 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
 
     [ถังข้อความกฎหมาย — match ด้วยเนื้อหา ไม่ใช่ลำดับ]
     เมื่อเนื้อหางวดเกี่ยวกับ: ยืนยัน PO / ยืนยันใบเสนอราคา / ลงนามสัญญา / เริ่มโครงการ / Kick Off
-    → "เมื่อผู้รับอนุญาตยืนยันใบสั่งซื้อ (Purchase Order) และ/หรือยืนยันใบเสนอราคา หรือเมื่อคู่สัญญาลงนามในสัญญา แล้วแต่เหตุการณ์ใดเกิดขึ้นก่อน"
+    → "เมื่อผู้รับอนุญาตยืนยันใบสั่งซื้อ (Purchase Order) และ/หรือยืนยันใบเสนอราคา "
 
     เมื่อเนื้อหางวดเกี่ยวกับ: Master Data / ข้อมูลหลัก / วิเคราะห์ระบบ / Analyze / Conceptual Design
     → "เมื่อผู้อนุญาตดำเนินการจัดทำและนำเข้าข้อมูลหลัก (Master Data) ตามขอบเขตงานที่กำหนดแล้วเสร็จ และได้แจ้งให้ผู้รับอนุญาตทราบ"
@@ -421,6 +454,12 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
     }}
     """
 
+    print("=" * 60)
+    print(f"[GEMINI] ===== กำลังส่งข้อมูลให้ Gemini =====")
+    print(f"  prompt size : {len(prompt):,} ตัวอักษร")
+    print(f"  มี DBD      : {'ใช่' if dbd_profile else 'ไม่มี'}")
+    print("=" * 60)
+
     response = client.models.generate_content(
         model="gemini-3.5-flash",
         contents=[prompt],
@@ -433,13 +472,14 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
     usage = response.usage_metadata
     cost_usd = (usage.prompt_token_count * 1.5 + usage.candidates_token_count * 9.0) / 1_000_000
     cost_thb = cost_usd * 35.0
-    print(
-        f"[TOKEN] input={usage.prompt_token_count} | "
-        f"output={usage.candidates_token_count} | "
-        f"total={usage.total_token_count} | "
-        f"cost≈${cost_usd:.6f} ({cost_thb:.4f} THB)"
-    )
-    print(f"[DEBUG] Gemini API response received, len={len(raw_response) if raw_response else 0}")
+    print("=" * 60)
+    print("[GEMINI] ===== ผลลัพธ์จาก Gemini =====")
+    print(f"  input tokens : {usage.prompt_token_count:,}")
+    print(f"  output tokens: {usage.candidates_token_count:,}")
+    print(f"  total tokens : {usage.total_token_count:,}")
+    print(f"  ราคา         : ${cost_usd:.6f}  ({cost_thb:.4f} THB)")
+    print(f"  response len : {len(raw_response) if raw_response else 0:,} ตัวอักษร")
+    print("=" * 60)
 
     if raw_response is None:
         raise HTTPException(status_code=500, detail="Gemini returned no content.")
@@ -450,7 +490,7 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
 # =================================================================
 # Post-process: คำนวณ field ที่ derive จาก field อื่น
 # =================================================================
-def post_process(data: dict) -> dict:
+def post_process(cleaned_data: CleanQuotationData, data: dict) -> dict:
 
     def to_num(val):
         try:
@@ -460,7 +500,7 @@ def post_process(data: dict) -> dict:
 
     def to_baht(val):
         try:
-            return bahttext(to_num(val))
+            return bahttext(to_num(val)).removesuffix("ถ้วน")
         except:
             return "ไม่พบข้อมูล"
 
@@ -470,15 +510,35 @@ def post_process(data: dict) -> dict:
         except:
             return str(val)
 
-    # ── คำนวณ License fee จาก Deposit ÷ 2 ──────────────
+    # ── คำนวณ License fee เดือน/ปี จากรายการ "เงินประกันการใช้โปรแกรม" โดยตรง ──
+    # ใช้ quantity/unit จริงของรายการนั้น แทนการสมมติว่าเงินประกัน = 2 เดือนเสมอ
+    # คำนวณแค่ฝั่งที่ถูกเลือกจริง (เดือน หรือ ปี) อีกฝั่งใส่ "-" ไปเลย ไม่ต้องแปลงคำอ่าน
     deposit = to_num(data.get("Deposit_amount", 0))
-    month_price = deposit / 2
-    year_price  = month_price * 12
+    deposit_item = next(
+        (item for item in cleaned_data.products_and_services
+         if "เงินประกันการใช้โปรแกรม" in item.item_name),
+        None
+    )
 
-    data["License_fee_month_price"] = fmt(month_price)
-    data["License_fee_month_text"]  = to_baht(month_price)
-    data["License_fee_year_price"]  = fmt(year_price)
-    data["License_fee_year_text"]   = to_baht(year_price)
+    is_year = False
+    if deposit_item and deposit_item.quantity:
+        qty = deposit_item.quantity
+        unit = (deposit_item.unit or "").strip().lower()
+        is_year = "year" in unit or "ปี" in unit
+    else:
+        # fallback: ไม่พบรายการเงินประกัน ใช้สมมติฐานเดิม (เงินประกัน = 2 เดือน)
+        qty = 2
+
+    if is_year:
+        year_price = deposit / qty
+        data["License_fee_year_price"]  = fmt(year_price)
+        data["License_fee_year_text"]   = to_baht(year_price)
+        data["License_fee_month_price"] = "-"
+    else:
+        month_price = deposit / qty
+        data["License_fee_month_price"] = fmt(month_price)
+        data["License_fee_month_text"]  = to_baht(month_price)
+        data["License_fee_year_price"]  = "-"
 
     # ── แปลงตัวหนังสือราคาอื่นๆ ──────────────────────
     data["Deposit_amount_text"]          = to_baht(data.get("Deposit_amount", 0))
@@ -589,7 +649,7 @@ async def verify_token(authorization: str = Header(None)):
     token = authorization.split("Bearer ", 1)[1]
     try:
         response = http_requests.get(
-            EXTERNAL_AUTH_VERIFY_URL,
+            EXTERNAL_QUOTATION_URL,
             headers={"X-Mango-Auth": token},
             timeout=150,
         )
@@ -656,9 +716,14 @@ async def generate_contract(
         parsed_json = payload.result_quotation
         quotation_id = payload.quotation_id
 
+        print("=" * 60)
+        print(f"[CONTRACT] ===== เริ่มสร้างสัญญา: {quotation_id} =====")
+        print(f"  มี DBD: {'ใช่ — ' + str(payload.dbd_data.get('company_name')) if payload.dbd_data else 'ไม่มี'}")
+        print("=" * 60)
+
         # 1. ทำความสะอาดข้อมูล
         cleaned_data = filter_and_clean_quotation(parsed_json)
-        print(f"[✅ สำเร็จ] กำลังสร้างสัญญาจากใบเสนอราคา: {quotation_id}")
+        print(f"[1/5] CLEAN — customer={cleaned_data.customer_name} | items={len(cleaned_data.products_and_services)} | payments={len(cleaned_data.payment_terms)}")
 
         # 2. ส่งให้ Gemini สกัดข้อมูล (รวม DBD profile ถ้ามี)
         gemini_analysis = analyze_with_gemini(cleaned_data, dbd_profile=payload.dbd_data)
@@ -666,22 +731,35 @@ async def generate_contract(
         # 3. Parse JSON — ไม่ validate ผ่าน Pydantic เพราะ Key เป็น dynamic
         try:
             final_data = try_parse_json(gemini_analysis)
-            print(f"[✅ JSON Valid] parse JSON สำเร็จ keys={list(final_data.keys())[:5]}")
+            print(f"[3/5] PARSE — keys ทั้งหมด ({len(final_data)}): {list(final_data.keys())}")
+            print(f"  Licensee_company_name    : {final_data.get('Licensee_company_name')}")
+            print(f"  Licensee_tax_id          : {final_data.get('Licensee_tax_id')}")
+            print(f"  Licensee_authorized_person: {final_data.get('Licensee_authorized_person')}")
+            print(f"  Licensee_address         : {final_data.get('Licensee_address')}")
+            print(f"  Deposit_amount           : {final_data.get('Deposit_amount')}")
+            print(f"  Contract_date            : {final_data.get('Contract_date')}")
         except Exception as e:
             print(f"[❌ JSON Error] {str(e)}")
             raise HTTPException(status_code=500, detail=f"ข้อมูลจาก AI ไม่ถูกต้อง: {str(e)}")
 
         # 4. คำนวณ field ที่ derive (License fee, text versions ฯลฯ)
-        final_data = post_process(final_data)
-
-        if payload.dbd_data:
-            print(f"[DBD] ข้อมูล DBD ถูกส่งให้ Gemini วิเคราะห์แล้ว: company={payload.dbd_data.get('company_name')}")
+        final_data = post_process(cleaned_data, final_data)
+        print(f"[4/5] POST-PROCESS — License_fee_month={final_data.get('License_fee_month_price')} | License_fee_year={final_data.get('License_fee_year_price')}")
 
         # 4.5 บันทึก JSON ก่อน render ไปไว้ใน eval/predictions/ สำหรับเทียบ accuracy
         save_eval_prediction(quotation_id, final_data)
+        print(f"[4.5/5] SAVE — บันทึก eval prediction สำเร็จ")
 
         # 5. Wrap เป็น RichText สีแดง ขีดเส้นใต้
         wrapped_data = wrap_values_richtext(final_data)
+
+        # 5.5 Flag ธรรมดา (ไม่ใช่ RichText) บอก template ว่า field นี้เป็น "-" หรือไม่
+        #     ใช้เพื่อซ่อนวงเล็บ "( )" ของ Text_month_row_X / Text_year_row_X เมื่อไม่ได้ถูกเลือก
+        for i in range(1, 4):
+            for prefix in ("Optional_month_rows_", "Optional_year_rows_"):
+                key = f"{prefix}{i}"
+                wrapped_data[f"{key}_is_dash"] = str(final_data.get(key, "")).strip() == "-"
+
 
         # 6. Render template
         doc = DocxTemplate('template_สัญญาเช่า.docx')
@@ -693,6 +771,12 @@ async def generate_contract(
         doc_io.seek(0)
         file_bytes = doc_io.read()
 
+        print("=" * 60)
+        print(f"[5/5] DONE — สร้างไฟล์ {quotation_id}.docx สำเร็จ ({len(file_bytes):,} bytes)")
+        print("=" * 60)
+        
+
+        
         return JSONResponse(content={
             "file_base64": base64.b64encode(file_bytes).decode("ascii"),
             "file_name": f"สัญญา_{quotation_id}.docx",

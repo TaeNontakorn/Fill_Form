@@ -26,13 +26,26 @@
 
         <div class="input-group">
           <label for="userpass">&#x1F512; รหัสผ่าน</label>
-          <input
-            id="userpass"
-            v-model="userpass"
-            type="password"
-            placeholder="กรอกรหัสผ่าน"
-            :disabled="loading"
-          />
+          <div class="password-field">
+            <input
+              id="userpass"
+              v-model="userpass"
+              :type="showPassword ? 'text' : 'password'"
+              placeholder="กรอกรหัสผ่าน"
+              :disabled="loading"
+            />
+            <button
+              type="button"
+              class="toggle-password"
+              :disabled="loading"
+              :title="showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'"
+              :aria-label="showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'"
+              @click="showPassword = !showPassword"
+            >
+              <span v-if="showPassword">&#x1F648;</span>
+              <span v-else>&#x1F441;&#xFE0F;</span>
+            </button>
+          </div>
         </div>
 
         <button type="submit" class="btn-login" :disabled="loading">
@@ -61,6 +74,7 @@ import { auth } from '../stores/auth'
 const router = useRouter()
 const userid = ref('')
 const userpass = ref('')
+const showPassword = ref(false)
 const loading = ref(false)
 const error = ref('')
 
@@ -230,6 +244,39 @@ async function handleLogin() {
 
 .input-group input::placeholder {
   color: #71717a;
+}
+
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 3rem;
+}
+
+.toggle-password {
+  position: absolute;
+  top: 50%;
+  right: 0.6rem;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  padding: 0.3rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #a1a1aa;
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.toggle-password:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.toggle-password:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-login {
