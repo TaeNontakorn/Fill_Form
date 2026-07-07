@@ -400,7 +400,7 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
 
     "Optional_modules_count"  : จำนวนระบบโมดูลเสริมที่ลูกค้าซื้อเพิ่ม (ตัวเลข)
     "Optional_modules_rows_1" : ชื่อระบบโมดูลเสริมที่ 1
-    "Optional_month_rows_1"   : ราคาต่อเดือนของโมดูลที่ 1 ตัวเลขเท่านั้น
+    "Optional_month_rows_1"   : ราคาต่อเดือนของโมดูลที่ 1 ตัวเลขเท่านั้นถ้าเป็น
     "Optional_year_rows_1"    : ราคาต่อปีของโมดูลที่ 1 ตัวเลขเท่านั้น
     "Optional_modules_rows_2" : ชื่อระบบโมดูลเสริมที่ 2
     "Optional_month_rows_2"   : ราคาต่อเดือนของโมดูลที่ 2 ตัวเลขเท่านั้น
@@ -536,7 +536,10 @@ def post_process(cleaned_data: CleanQuotationData, data: dict) -> dict:
 
     def to_baht(val):
         try:
-            return bahttext(to_num(val)).removesuffix("ถ้วน")
+            num = to_num(val)
+            if num == 0:
+                return "แบบไม่มีค่าใช้จ่าย (free of charge)"
+            return bahttext(num).removesuffix("ถ้วน")
         except:
             return "ไม่พบข้อมูล"
 

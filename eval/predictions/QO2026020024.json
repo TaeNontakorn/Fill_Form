@@ -13,7 +13,7 @@
   "Total_optional_modules_count": 1,
   "Optional_modules_count": 1,
   "Optional_modules_rows_1": "Mango TOKBUD",
-  "Optional_month_rows_1": "0",
+  "Optional_month_rows_1": "-",
   "Optional_year_rows_1": "-",
   "Optional_modules_rows_2": "ไม่พบข้อมูล",
   "Optional_month_rows_2": "-",
@@ -21,7 +21,7 @@
   "Optional_modules_rows_3": "ไม่พบข้อมูล",
   "Optional_month_rows_3": "-",
   "Optional_year_rows_3": "-",
-  "User_with_program": 0,
+  "User_with_program": 35,
   "Free_user_count": 10,
   "Add_concurrent": 35,
   "Add_concurrent_rate_price_month": "42,000",
@@ -31,7 +31,7 @@
   "Add_multi_rate_price": "5,000",
   "Free_applications_list": "การอนุมัติเอกสาร (Document Approval)\nการรับของ (PO Received)\nการตรวจนับทรัพย์สิน (Count Asset)\nการแจ้งเตือน (Notification)",
   "Paid_applications_list": "การบันทึกเอกสารเบิกเงินสดย่อย (Mango Petty Cash)\nการบันทึกเอกสารขอซื้อ ขอจ้าง (Mango PR)\nการรับวางบิลผู้รับเหมา (Mango Billing)\nสรุปภาพรวมของทุกโครงการ (Mango PM)",
-  "Cloud_usage_space_details": "พื้นที่สำหรับจัดเก็บเอกสาร (Storage), พื้นที่จัดเก็บฐานข้อมูล (Database) และการสำรองข้อมูล (Back up) รวมจำนวน 100 กิกะไบต์ (GB) พื้นที่สำหรับติดตั้งโปรแกรม (Program Installation Space) จำนวน 100 กิกะไบต์ (GB) รวมบริการ SSL , Domain , Database : Microsoft SQL",
+  "Cloud_usage_space_details": "พื้นที่สำหรับจัดเก็บเอกสาร (Storage), พื้นที่จัดเก็บฐานข้อมูล (Database) และการสำรองข้อมูล (Back up) รวมจำนวน 100 กิกะไบต์ (GB) พื้นที่สำหรับติดตั้งโปรแกรม (Program Installation Space) จำนวน 100 กิกะไบต์ (GB)",
   "Deposit_amount": "114,000",
   "Implement_package_name": "Lite",
   "Implement_price": "320,000",
@@ -54,6 +54,5 @@
   "Deposit_amount_text": "หนึ่งแสนหนึ่งหมื่นสี่พันบาท",
   "Implement_price_text": "สามแสนสองหมื่นบาท",
   "Support_rate_per_manday_text": "หนึ่งหมื่นสี่พันบาท",
-  "Text_month_row_1": "ศูนย์บาท",
   "Add_concurrent_rate_price_text_after": "หนึ่งพันบาท"
 }
