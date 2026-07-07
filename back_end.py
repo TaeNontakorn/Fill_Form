@@ -43,7 +43,6 @@ EXTERNAL_AUTH_LOGIN_URL = os.environ.get(
 MAINCODE = os.environ.get("MAINCODE", "MANGO")
 EXTERNAL_QUOTATION_URL = os.environ.get(
     "EXTERNAL_QUOTATION_URL",
-    
     "https://service.mangoanywhere.com/Anywhere/BD/QO_ReadData"
 )
 
@@ -120,12 +119,49 @@ def extract_json_from_qwen_response(response_text: str) -> str:
                     return response_text[start:idx+1].strip()
     return response_text.strip()
 
+def repair_truncated_json(text: str) -> str:
+    # ซ่อม JSON ที่โมเดลตอบกลับมาไม่ครบ เช่น ขาด } หรือ ] ปิดท้าย
+    # (gemini-3.5-flash ใน JSON mode ตัด } ตัวสุดท้ายหายเป็นบางครั้ง)
+    stack = []
+    in_string = False
+    escape = False
+    for ch in text:
+        if escape:
+            escape = False
+            continue
+        if ch == '\\':
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in '{[':
+            stack.append(ch)
+        elif ch in '}]':
+            if stack:
+                stack.pop()
+    if in_string:
+        text += '"'
+    text = re.sub(r",\s*$", "", text)
+    for ch in reversed(stack):
+        text += '}' if ch == '{' else ']'
+    return text
+
 def try_parse_json(text: str):
     text = (text or '').strip()
     if not text:
         raise json.JSONDecodeError("Empty response", text, 0)
     try:
         return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    try:
+        repaired = repair_truncated_json(text)
+        if repaired != text:
+            print(f"[DEBUG] repair_truncated_json — เติมส่วนปิดท้ายที่หายไป ({len(repaired) - len(text)} ตัวอักษร)")
+            return json.loads(repaired)
     except json.JSONDecodeError:
         pass
     try:
