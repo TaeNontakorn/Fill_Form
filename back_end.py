@@ -549,6 +549,13 @@ def post_process(cleaned_data: CleanQuotationData, data: dict) -> dict:
         except:
             return str(val)
 
+    def is_zero(val):
+        # เป็นตัวเลขศูนย์จริงๆ เท่านั้น (ไม่นับ "-", ค่าว่าง หรือข้อความอื่นที่ parse ไม่ได้)
+        try:
+            return float(str(val).replace(",", "").strip()) == 0
+        except:
+            return False
+
     # ── คำนวณ License fee เดือน/ปี จากรายการ "เงินประกันการใช้โปรแกรม" โดยตรง ──
     # ใช้ quantity/unit จริงของรายการนั้น แทนการสมมติว่าเงินประกัน = 2 เดือนเสมอ
     # คำนวณแค่ฝั่งที่ถูกเลือกจริง (เดือน หรือ ปี) อีกฝั่งใส่ "-" ไปเลย ไม่ต้องแปลงคำอ่าน
@@ -591,13 +598,28 @@ def post_process(cleaned_data: CleanQuotationData, data: dict) -> dict:
         if data.get(m_key) and data[m_key] != "-":
             data[f"Text_month_row_{i}"] = to_baht(data[m_key])
         if data.get(y_key) and data[y_key] != "-":
-            data[f"Text_year_row_{i}"]  = f"({to_baht(data[y_key])})"
+            y_text = to_baht(data[y_key])
+            # ถ้าเป็น free of charge ไม่ต้องครอบวงเล็บซ้ำ (ในข้อความมีวงเล็บอยู่แล้ว)
+            data[f"Text_year_row_{i}"]  = y_text if is_zero(data[y_key]) else f"({y_text})"
 
     # ── Add concurrent text ────────────────────────────
     if data.get("Add_concurrent_rate_price_after"):
         data["Add_concurrent_rate_price_text_after"] = to_baht(
             data["Add_concurrent_rate_price_after"]
         )
+
+    # ── ราคาที่เป็น 0 (free of charge) ไม่ต้องแสดงเลข 0 ในเอกสาร ──
+    # เคลียร์ฝั่งตัวเลขให้ว่าง เหลือแค่คำอ่าน "แบบไม่มีค่าใช้จ่าย (free of charge)"
+    zero_price_keys = [
+        "License_fee_month_price", "License_fee_year_price",
+        "Deposit_amount", "Implement_price", "Support_rate_per_manday",
+        "Add_concurrent_rate_price_after",
+        *[f"Optional_month_rows_{i}" for i in range(1, 4)],
+        *[f"Optional_year_rows_{i}" for i in range(1, 4)],
+    ]
+    for key in zero_price_keys:
+        if is_zero(data.get(key)):
+            data[key] = ""
 
     return data
 
@@ -784,10 +806,6 @@ async def generate_contract(
         # 4. คำนวณ field ที่ derive (License fee, text versions ฯลฯ)
         final_data = post_process(cleaned_data, final_data)
         print(f"[4/5] POST-PROCESS — License_fee_month={final_data.get('License_fee_month_price')} | License_fee_year={final_data.get('License_fee_year_price')}")
-
-        # 4.5 บันทึก JSON ก่อน render ไปไว้ใน eval/predictions/ สำหรับเทียบ accuracy
-        save_eval_prediction(quotation_id, final_data)
-        print(f"[4.5/5] SAVE — บันทึก eval prediction สำเร็จ")
 
         # 5. Wrap เป็น RichText สีแดง ขีดเส้นใต้
         wrapped_data = wrap_values_richtext(final_data)
