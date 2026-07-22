@@ -354,7 +354,7 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
         "สามในห้าคน" → X=3, N=5
 
         [กรณีที่ 3] signing_authority ว่างหรือไม่มีข้อมูล และ directors ว่างเปล่า
-        → ใส่ "ไม่พบข้อมูล"
+        → ใส่ค่าว่าง ""
     ─────────────────────────────────────────────────────────────────────
 """
 
@@ -367,7 +367,7 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
 
     [กฎข้อบังคับที่ต้องทำตามอย่างเคร่งครัด]
     1. ห้ามมีข้อความเกริ่นนำ ข้อความสรุป หรือคำอธิบายใดๆ ทั้งสิ้น ให้ตอบกลับมาแค่โครงสร้างปีกกา {{...}} ของ JSON เท่านั้น
-    2. หากหัวข้อไหนไม่พบข้อมูลในเอกสาร ให้ใส่ค่าเป็น string "ไม่พบข้อมูล" เท่านั้น ห้ามใส่ค่าว่าง "", ห้ามใส่ null, ห้ามข้ามฟิลด์นั้น
+    2. หากหัวข้อไหนไม่พบข้อมูลในเอกสาร ให้ใส่ค่าเป็นค่าว่าง "" (empty string) เท่านั้น ห้ามใส่ null, ห้ามข้ามฟิลด์นั้น (ยังต้องมี key ครบทุกตัว)
     3. ใช้ชื่อ Key ตามที่ระบุด้านล่างนี้เป๊ะๆ ห้ามเปลี่ยนชื่อ Key โดยเด็ดขาด
     4. ห้ามแต่งเติมข้อมูลที่ไม่มีในเอกสารเด็ดขาด
     5. "unit" และ "quantity" ต้องพิจารณาร่วมกัน: ถ้า quantity=12 และ unit=month ให้คิดว่าเป็น 1 ปี
@@ -411,7 +411,7 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
 
     ── จำนวนผู้ใช้งานและบริษัทในเครือ ──────────────────────────────────
 
-    "User_with_program"               : จำนวนผู้ใช้งานที่มาพร้อมโปรแกรม (Standard Users) ตัวเลขเท่านั้นแต่ถ้าไม่มีให้ใส่ตัวเลข 0
+    "User_with_program"               : จำนวนผู้ใช้งานที่มาพร้อมโปรแกรม (Standard Users) ตัวเลขเท่านั้นแต่ถ้าไม่มีให้ใส่ตัวเลข 0 ห้ามเอา Add_concurrent มาใส่เ
     "Free_user_count"                 : จำนวนผู้ใช้งานแบบฟรี (Free Users) **แยกเป็นต้วเลขเท่านั้น** ต้องมีคำว่า Free of charge เท่านั้น
     *** หมายเหตุ: หากเอกสารเขียนรวมกน เช่น "Total 50 Users (Includes 5 Free)" หรือ "Standard 45 + Free 5"
        ให้แยกเป็ฯ User_with_program=45 และ Free_user_count=5 โดยตรง ห้ามส่งค่ารวมกน ***
@@ -468,18 +468,25 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
     → "Payment_price_2": "300000", "Payment_description_2": "เมื่อผู้อนุญาตดำเนินการฝึกอบรมการใช้งานระบบ (Training)..."
     → ไม่มี Payment_price_3, Payment_price_4 เลย
 
+    -- Cloud Usage Space Details ---------------------------------
+    "Store_install" : พื้นที่สำหรับติดตั้งโปรแกรม (Install) เช่น "พื้นที่สำหรับติดตั้งโปรแกรม (Program Installation Space) จำนวน 100 กิกะไบต์ (GB)"
+    "Store_get_data" : พื้นที่สำหรับจัดเก็บเอกสารและข้อมูลต่างๆ เช่น "พื้นที่สำหรับจัดเก็บเอกสารและข้อมูล (Data Storage Space) จำนวน 500 กิกะไบต์ (GB)"
+
+    -- CUSTOM Program -------------------------------------------
+    "Customize_price" : ราคาค่าพัฒนาโปรแกรมเพิ่มเติม (Custom Program) ตัวเลขเท่านั้น เช่น 50000
+    
     ── เอกสารแนบท้าย ────────────────────────────────────────────────────
 
     "Quotation_id"                   : เลขที่ใบเสนอราคาที่อ้างอิงเป็นเอกสารแนบท้าย
     "Quotation_date"                 : วันที่ใบเสนอราคา รูปแบบ "1 มกราคม 2567"
-    "Subsidiaries_attachment_status" : ถ้ามีบริษัทในเครือ ให้ใส่ "มีเอกสารแนบท้าย" / ถ้าไม่มีให้ใส่ "ไม่มีเอกสารแนบท้าย"
+    "Subsidiaries_attachment_status" : ถ้ามีบริษัทในเครือ ให้ใส่ "มี" / ถ้าไม่มีให้ใส่ "ไม่มี"
 
     ตัวอย่างรูปแบบ JSON ที่ต้องการ:
     {{
         "Contract_id": "123456789",
         "Contract_date": "1 มกราคม 2567",
         "Licensee_company_name": "บริษัท แมงโก้ จำกัด",
-        "Licensee_tax_id": "ไม่พบข้อมูล",
+        "Licensee_tax_id": "",
         "Optional_modules_rows_1": "ระบบ HR",
         "Optional_month_rows_1": "5,000",
         "Optional_year_rows_1": "60,000",
@@ -541,7 +548,7 @@ def post_process(cleaned_data: CleanQuotationData, data: dict) -> dict:
                 return "แบบไม่มีค่าใช้จ่าย (free of charge)"
             return bahttext(num).removesuffix("ถ้วน")
         except:
-            return "ไม่พบข้อมูล"
+            return ""
 
     def fmt(val):
         try:
@@ -556,40 +563,60 @@ def post_process(cleaned_data: CleanQuotationData, data: dict) -> dict:
         except:
             return False
 
-    # ── คำนวณ License fee เดือน/ปี จากรายการ "เงินประกันการใช้โปรแกรม" โดยตรง ──
-    # ใช้ quantity/unit จริงของรายการนั้น แทนการสมมติว่าเงินประกัน = 2 เดือนเสมอ
-    # คำนวณแค่ฝั่งที่ถูกเลือกจริง (เดือน หรือ ปี) อีกฝั่งใส่ "-" ไปเลย ไม่ต้องแปลงคำอ่าน
-    deposit = to_num(data.get("Deposit_amount", 0))
-    deposit_item = next(
-        (item for item in cleaned_data.products_and_services
-         if "เงินประกันการใช้โปรแกรม" in item.item_name),
-        None
-    )
+    # ── คำนวณ License fee เดือน/ปี โดย "บวกยอดทุกรายการที่จ่ายรอบเดียวกัน" ──
+    # ราคารายปี/รายเดือนในใบเสนอราคาไม่ได้ระบุแยกไว้ตรงๆ จึงต้องรวมยอด (price = ยอดรวมทั้งบรรทัด)
+    # ของทุกรายการที่เป็นรอบเดียวกันเข้าด้วยกัน
+    #   • รายปี   = รวม price ของรายการที่เป็นรายปี (unit=year/ปี หรือ qty=12 + unit=month)
+    #   • รายเดือน = รวม price ของรายการที่เป็นรายเดือน
+    # ยกเว้น: เงินประกันการใช้โปรแกรม และ งานวางระบบ (Implement) เพราะเป็นค่าจ่ายครั้งเดียว ไม่ใช่ค่ารายรอบ
+    EXCLUDE_KEYWORDS = ["เงินประกันการใช้โปรแกรม", "วางระบบ", "implement"]
 
-    is_year = False
-    if deposit_item and deposit_item.quantity:
-        qty = deposit_item.quantity
-        unit = (deposit_item.unit or "").strip().lower()
-        is_year = "year" in unit or "ปี" in unit
+    def is_excluded(name: str) -> bool:
+        low = (name or "").lower()
+        return any(kw.lower() in low for kw in EXCLUDE_KEYWORDS)
+
+    def is_annual_item(item) -> bool:
+        unit = (item.unit or "").strip().lower()
+        return "year" in unit or "ปี" in unit or (item.quantity == 12 and "month" in unit)
+
+    year_sum = 0.0
+    month_sum = 0.0
+    for item in cleaned_data.products_and_services:
+        if is_excluded(item.item_name):
+            continue
+        if is_annual_item(item):
+            year_sum += item.price
+        else:
+            month_sum += item.price
+
+    # โหมดการชำระเงินของใบเสนอราคานี้: เป็นรายปี เมื่อมียอดรายปีและไม่มียอดรายเดือน
+    is_year_billing = year_sum > 0 and month_sum == 0
+
+    if year_sum > 0:
+        data["License_fee_year_price"] = fmt(year_sum)
+        data["License_fee_year_text"]  = to_baht(year_sum)
     else:
-        # fallback: ไม่พบรายการเงินประกัน ใช้สมมติฐานเดิม (เงินประกัน = 2 เดือน)
-        qty = 2
+        data["License_fee_year_price"] = "-"
+        data["License_fee_year_text"]  = ""
 
-    if is_year:
-        year_price = deposit / qty
-        data["License_fee_year_price"]  = fmt(year_price)
-        data["License_fee_year_text"]   = to_baht(year_price)
+    if month_sum > 0:
+        data["License_fee_month_price"] = fmt(month_sum)
+        data["License_fee_month_text"]  = to_baht(month_sum)
+    else:
         data["License_fee_month_price"] = "-"
+        data["License_fee_month_text"]  = ""
+
+    # ── เงินประกัน: มีเฉพาะแบบรายเดือน ── ถ้าเป็นรายปีไม่มีเงินประกัน ให้เคลียร์ทิ้ง ──
+    if is_year_billing:
+        data["Deposit_amount"]      = ""
+        data["Deposit_amount_text"] = ""
     else:
-        month_price = deposit / qty
-        data["License_fee_month_price"] = fmt(month_price)
-        data["License_fee_month_text"]  = to_baht(month_price)
-        data["License_fee_year_price"]  = "-"
+        data["Deposit_amount_text"] = to_baht(data.get("Deposit_amount", 0))
 
     # ── แปลงตัวหนังสือราคาอื่นๆ ──────────────────────
-    data["Deposit_amount_text"]          = to_baht(data.get("Deposit_amount", 0))
     data["Implement_price_text"]         = to_baht(data.get("Implement_price", 0))
     data["Support_rate_per_manday_text"] = to_baht(data.get("Support_rate_per_manday", 0))
+    data["Customize_price_text"]         = to_baht(data.get("Customize_price", 0))
 
     # ── Optional Modules text ──────────────────────────
     for i in range(1, 4):
@@ -819,7 +846,7 @@ async def generate_contract(
 
 
         # 6. Render template
-        doc = DocxTemplate('template_สัญญาเช่า.docx')
+        doc = DocxTemplate('TEMPLA~1 - Copy.docx')
         doc.render(wrapped_data)
 
         # 7. บันทึกลง BytesIO (ไม่ใช้ disk)
