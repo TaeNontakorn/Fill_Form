@@ -424,14 +424,6 @@ def analyze_with_gemini(parsed_json, dbd_profile: dict = None):
 
     ── Applications และ Cloud ────────────────────────────────────────────
 
-    [ถังแอปฟรี — ถ้าเจอชื่อแอปในเอกสารให้ match กับรายการนี้แล้วคัดลอกชื่อมาตรงๆ]
-    Free_list: "การอนุมัติเอกสาร (Document Approval)", "การรับของ (PO Received)", "การตรวจนับทรัพย์สิน (Count Asset)", "การแจ้งเตือน (Notification)", "การจัดทำเอกสารเบิก โอน จ่ายวัสดุ (Mango ICM)", "อัปเดตความก้าวหน้าของงาน (Update Progress)", "ระบบตรวจงาน (Mango QCM)"
-
-    [ถังแอปมีค่าใช้จ่าย — ถ้าเจอชื่อแอปในเอกสารให้ match กับรายการนี้แล้วคัดลอกชื่อมาตรงๆ]
-    Pay_list: " Realty Quick (ขาย/ออกใบเสนอราคา)","การบันทึกเอกสารเบิกเงินสดย่อย (Mango Petty Cash)", "การบันทึกเอกสารขอซื้อ ขอจ้าง (Mango PR)", "การรับวางบิลผู้รับเหมา (Mango Billing)", "สรุปภาพรวมของทุกโครงการ (Mango PM)"
-
-    "Free_applications_list"    : รายชื่อแอปฟรีที่ลูกค้าได้รับ ให้ดึงจากถัง Free_list ตามที่ปรากฏในเอกสาร ต้องเป็น string คั่นด้วย \n เช่น "การอนุมัติเอกสาร (Document Approval)\nการรับของ (PO Received)"
-    "Paid_applications_list"    : รายชื่อแอปมีค่าใช้จ่ายที่ลูกค้าซื้อเพิ่ม ให้ดึงจากถัง Pay_list ตามที่ปรากฏในเอกสาร ต้องเป็น string คั่นด้วย \n
     "Cloud_usage_space_details" : รายละเอียดการใช้งาน Cloud เช่น ขนาดพื้นที่ จำนวนฐานข้อมูล จำนวน User พร้อมกัน การสำรองข้อมูล
 
     ── การวางระบบ (Implement) ───────────────────────────────────────────
@@ -606,6 +598,29 @@ def post_process(cleaned_data: CleanQuotationData, data: dict) -> dict:
         data["License_fee_month_price"] = "-"
         data["License_fee_month_text"]  = ""
 
+    # ── ราคารายเดือน/รายปี ของตัวโปรแกรมหลัก (Software_product_name) ──
+    # ค้นหา item ที่ชื่อตรงกับชื่อโปรแกรมหลัก แล้วแยกราคาตามรอบบิล (เดือน/ปี)
+    # ถ้าไม่เจอให้เว้นว่าง
+    def norm(s: str) -> str:
+        return "".join((s or "").lower().split())
+
+    sw_norm = norm(data.get("Software_product_name", ""))
+    software_month_price = ""
+    software_year_price  = ""
+    if sw_norm:
+        for item in cleaned_data.products_and_services:
+            item_norm = norm(item.item_name)
+            if not item_norm:
+                continue
+            # จับคู่เมื่อชื่อ item กับชื่อโปรแกรมหลักครอบคลุมซึ่งกันและกัน
+            if sw_norm in item_norm or item_norm in sw_norm:
+                if is_annual_item(item):
+                    software_year_price = fmt(item.price)
+                else:
+                    software_month_price = fmt(item.price)
+    data["Software_product_month_price"] = software_month_price
+    data["Software_product_year_price"]  = software_year_price
+
     # ── เงินประกัน: มีเฉพาะแบบรายเดือน ── ถ้าเป็นรายปีไม่มีเงินประกัน ให้เคลียร์ทิ้ง ──
     if is_year_billing:
         data["Deposit_amount"]      = ""
@@ -647,6 +662,19 @@ def post_process(cleaned_data: CleanQuotationData, data: dict) -> dict:
     for key in zero_price_keys:
         if is_zero(data.get(key)):
             data[key] = ""
+
+    # ── Per_pay_price_X: สัดส่วนของแต่ละงวดคิดเป็นเปอร์เซ็นต์ของยอดรวมทุกงวด ──
+    payment_prices = {}
+    for i in range(1, 5):
+        val = data.get(f"Payment_price_{i}")
+        if val not in (None, "", "-"):
+            payment_prices[i] = to_num(val)
+    total_payment = sum(payment_prices.values())
+    if total_payment > 0:
+        for i, price in payment_prices.items():
+            pct = price / total_payment * 100
+            # ตัดทศนิยมถ้าลงตัว (เช่น 50 ไม่ใช่ 50.00)
+            data[f"Per_pay_price_{i}"] = f"{pct:.0f}" if pct == round(pct) else f"{pct:.2f}"
 
     return data
 
